@@ -1,0 +1,1101 @@
+---
+title: "SMC_NAC_dataUpload"
+author: "Lala M Motlhabi"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: yes
+    toc_depth: '4'
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+  html_document:
+    code_folding: hide
+    fig_height: 8
+    fig_width: 8
+    keep_md: no
+    output:
+      pandoc_args:
+      - +RTS
+      - -K64m
+      - -RTS
+    self_contained: no
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( cache=TRUE )
+knitr::opts_chunk$set( echo=TRUE )
+knitr::opts_chunk$set( message=FALSE )
+knitr::opts_chunk$set(warning=FALSE )
+knitr::opts_chunk$set(autodep=TRUE)
+options(figcap.prefix = "Figure", figcap.sep = ":", figcap.prefix.highlight = "**")
+options(tabcap.prefix = "Table", tabcap.sep = ":", tabcap.prefix.highlight = "**")
+```
+```{r config}
+install.packages("ssh.utils")
+library(ssh.utils)
+library(dplyr)
+library(DT)
+library(reshape2)
+library(mongolite)
+library(stringr)
+library(tidyverse)
+library(tidyr)
+library(data.table)
+library(getopt)
+library(reshape2)
+
+```
+
+#Mongolite
+ex.http://datascience-enthusiast.com/R/MongoDB_R_Python.html
+```{r mongolite, eval=F}
+
+m<-mongolite::mongo("omics_data_dev", db="VIP",url="mongodb://lj-compbio-dev103:27018")
+m$count() #1686067698
+
+#see how data looks like
+m$iterate()$one()
+
+#How many distinct "PROJECT_NAME"
+length(m$distinct("PROJECT_NAME"))
+
+#SMC
+m$count('{"PROJECT_NAME" : "SAMSUNG" }') #11332069
+
+
+```
+
+
+###
+
+
+
+###Broad Institute Project Achilles portal
+https://portals.broadinstitute.org/achilles
+
+Broad Cancer Dependency Map portal
+https://depmap.org/portal/
+
+VIP web portal
+http://laj-shiny/vip/
+
+Genomic copy number dictates a gene-independent cell response to CRISPR-Cas9 targeting
+http://cancerdiscovery.aacrjournals.org/content/early/2016/06/03/2159-8290.CD-16-0154
+
+Defining a Cancer Dependency Map
+https://www.sciencedirect.com/science/article/pii/S0092867417306517?via%3Dihub
+
+Computational correction of copy number effect improves specificity of CRISPR-Cas9 essentiality screens in cancer cells.
+https://www.nature.com/articles/ng.3984
+
+check ljqnap* disk-space usage
+cat /LJ/CompBio/share/data/0-disk-usage/2018-07-01-qnap.summary.txt 
+
+
+
+1. 06202018-SMC Data to upload
+\\LJSS\compbio\share\data\omics\SMC_neoadj\Rdata\SMC_neoadj_2018_6_21.RData
+
+###0622201 
+I have combined all of the coding mutations in ESF$Indel_Cancerscan and ESF$SNV_Cancerscan and CNV ESF$CNV_Cancerscan
+
+The updated R object is in the directory 
+
+2."/LJ/CompBio/share/data/omics/SMC_neoadj/Rdata/SMC_neoadj_2018_6_22.RData"
+Raw CancerScan data.
+/LJ/CompBio/share/data/omics/SMC_neoadj/Rdata/CancerScan/
+
+####Notes on annotating data to upload to be converted to JSON
+ "_id" : ObjectId("57083705e912347053875f36"), 
+    "PROJECT_NAME" : "CCLE", 
+    "SAMPLE_NAME" : "COLO704", 
+    "SAMPLE_TYPE" : "Tumor", 
+    "CANCER_TYPE" : "OVARY", 
+    "CLINICAL_TYPE" : "Clinical", 
+    "DATA_TYPE" : "discrete", 
+    "CLINICAL_VAR" : "Source", 
+    "VALUE" : "DSMZ", 
+    "IS_COMMON" : "Y", 
+    "CATEGORY" : "Sample annotations"
+
+####README notes from Julio
+### PARSE SAMSUNG DATA INTO VIP REQUIRED FORMAT AND LOAD IN DATABASE ###
+
+Original files from Ying
+========================
+$LJCB_WORK/dingying85/YBC_project/VIP/
+
+Working folder:
+---------------
+/LJ/CompBio/share/data/omics/SMC_YBC/vip
+Format files:
+=============
+##--CLINICAL_DATAMETADATA
+
+#### This is for all metadata. We are using a filtered version for now.
+less SMC_metadata.txt | gawk 'BEGIN {FS = "\t"} {print "SAMSUNG\t"$2"\tTumor\tBREAST\tSubject\tdiscrete\t"$1"\t"$3"\tY\tclinical"}' > vip_smc_sample_metadata_lala.txt
+####
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -variable_types SMC_BC_metadata_variable_selected.20160926.txt -output vip_smc_clinical_info.txt -datatype metadata -samples SMC_metadata.txt -project SAMSUNG
+
+sed -i to fix some error in the data-type
+sed -i '/Brca1 germline/s/continuous/discrete/g' vip_smc_clinical_info.txt
+sed -i '/Brca2 germline/s/continuous/discrete/g' vip_smc_clinical_info.txt
+sed -i '/Subtype consensus/s/continuous/discrete/g' vip_smc_clinical_info.txt
+sed -i '/Tumor size/s/discrete/continuous/g' vip_smc_clinical_info.txt
+sed -i '/P53/s/discrete/continuous/g' vip_smc_clinical_info.txt
+sed -i '/Ki67/s/discrete/continuous/g' vip_smc_clinical_info.txt
+
+ex. SMC_README /LJ/CompBio/share/data/omics/SMC
+```{r GetClinicaldata, eval=F}
+#\\LJSS\compbio\share\data\omics\SMC_neoadj\Rdata\SMC_neoadj_2018_6_21.RData
+#db.getCollection("clinical_data_dev").find({PROJECT_NAME:"SAMSUNG"})
+
+
+load("/LJ/CompBio/share/data/omics/SMC_neoadj/Rdata/SMC_neoadj_2018_6_21.RData")
+names(ESF)
+
+##get Clinical Meta Data
+#standard cols
+anno<-as.data.frame(ESF$annotation)
+names(anno)
+anno$PROJECT_NAME<-"SAMSUNG"
+anno$SAMPLE_NAME <-anno$sample_id
+anno$SAMPLE_TYPE <-"Tumor"
+anno$CANCER_TYPE <-"BREAST"
+anno$CLINICAL_TYPE <-"clinical"
+#edit colnames to remove \\.""
+names(anno)<-gsub("\\.","_",names(anno))
+names(anno)<-gsub("_$","",names(anno))
+names(anno)<-gsub("___","_",names(anno))
+names(anno)<-gsub("__","_",names(anno))
+#TYPE         
+#DATA_TYPE   
+#VARIABLE    
+#VALUE       
+#CATEGORY 
+##Get clinical data format colnames slots
+ #gete chunks at a time, with the common stad colums
+clin_list<-list()
+
+head(anno)
+
+#CLINICAL_VAR & VALUE
+
+#getfunction
+getClinicalVar<-function(dat=anno, clinVar="gender", value="age", dataType="continuous"){
+  clin_dat<-dat[,c("PROJECT_NAME","SAMPLE_NAME",
+                "SAMPLE_TYPE","CANCER_TYPE","CLINICAL_TYPE",cliVar, value)]
+  clin_dat$DATA_TYPE<-dataType
+  return(clin_dat)
+  
+}
+
+#clin_vars1<-melt(anno, id.vars=c("PROJECT_NAME","SAMPLE_NAME",
+#                "SAMPLE_TYPE","CANCER_TYPE","CLINICAL_TYPE"),measure.vars = c("menopausal.status", "breast.cancer.family.history","brca1","brca2","cell.type_at.diagnosis.","cell.type_at.diagnosis."))
+
+
+getClinVarLong<-function(dat=anno, cols=4:10){
+  clin_vars1<-melt(dat,id.var=67:71, measure.vars=cols)
+  return(clin_vars1)
+  
+}
+
+
+all<-getClinVarLong(cols=4:66)
+
+
+#add "DATA_TYPE" "discrete " or "continuous"
+all$DATA_TYPE<-"0"
+#manually identify DATA_TYPES
+#for each column characterize the data_type, "discrete" or "continuos"
+names(anno)
+names_cont<-names(anno[,c(5,18,28,36,42:43,46:48,52:62,64)])
+for(i in seq_along(names_cont)){all$DATA_TYPE[c(grep(names_cont[i],all$variable))]<-"continuous"}
+
+names_discrete<-names(anno[,-c(1:3,5,18,28,36,42:43,46:48,52:62,64, 67:71)])
+for(i in seq_along(names_discrete)){all$DATA_TYPE[c(grep(names_discrete[i],all$variable))]<-"discrete"}
+
+#CATEGORY 
+all$CATEGORY <- "Sample annotation"
+
+#CLINICAL_VAR
+names(all)<-sub("variable","CLINICAL_VAR",names(all))
+#VALUE 
+names(all)<-sub("value","VALUE",names(all))
+
+#IS_COMMON ???
+all$IS_COMMON<-"Y"
+#re-order columns
+#PROJECT_NAME	SAMPLE_NAME	SAMPLE_TYPE	CANCER_TYPE	CLINICAL_TYPE	DATA_TYPE	CLINICAL_VAR	VALUE	IS_COMMON	CATEGORY
+
+all<-all[,c(1:6,8,7,10,9)]
+saveRDS(all,"/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/all_metadata_long.RDS")
+
+#Get a list of  Per column_varibale metadata
+clin_list<-list()
+ for(i in seq(4,66)){
+  clin_list[[i]]<-getClinVarLong(cols=i)
+  
+  #for each column_variable, add the "DATA_TYPE" column a
+  names( clin_list)[i]<-names(anno)[i]
+  
+   }
+
+#remove the empty slots
+clin_list<-clin_list[!sapply(clin_list,is.null)]
+
+save(clin_list,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/PerColumndf_list.rda")
+
+```
+
+#Sumarry statistics : 
+##ESTIMATE
+less SMC_metadata.txt |grep tumor_purity | gawk 'BEGIN {FS = "\t"} {print "SAMSUNG\t"$1"\tTumor\tBREAST\tSubject\tcontinuous\t"$2"\t"$3"\tY\tclinical"}' > vip_smc_sample_purity.txt
+
+less /data//scbiod/CompBio/kanz/SMC_YBC/Sample_info/sample_qc_report_SMC_BC.20160309.txt | cut -f3,33 | gawk '{print "ESTIMATE stromal score\t"$1"\t"$2"\tcontinuous"}' > vip_sample_estimate_info.txt
+less /data//scbiod/CompBio/kanz/SMC_YBC/Sample_info/sample_qc_report_SMC_BC.20160309.txt | cut -f3,34 | gawk '{print "ESTIMATE immune score\t"$1"\t"$2"\tcontinuous"}' >> vip_sample_estimate_info.txt
+less /data//scbiod/CompBio/kanz/SMC_YBC/Sample_info/sample_qc_report_SMC_BC.20160309.txt | cut -f3,35 | gawk '{print "ESTIMATE score\t"$1"\t"$2"\tcontinuous"}' >> vip_sample_estimate_info.txt
+
+cat vip_sample_estimate_info.txt SMC_metadata.txt > SMC_estimate.txt
+
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -variable_types estimate_variables.txt -output vip_smc_estimate_info.txt -datatype metadata -samples SMC_estimate.txt -project SAMSUNG
+
+```{r getEstimateScores, eval=F}
+#example curated table
+ex.est<-read.table("/LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_estimate_info.txt", header=T, sep="\t",stringsAsFactors = F)
+
+#table with "ESTIMATE scores"
+est<-read.table("/LJ/CompBio/share/data/omics/SMC_neoadj/Rdata/ESF_estimate_score.gct", header=T, sep="\t", stringsAsFactors = F)
+colnames(est)<-est[1,]
+est<-est[-1,]
+estM<-melt(est, id.vars=1:2)
+estM$NAME<-sub("StromalScore", "ESTIMATE stromal score",estM$NAME)
+estM$NAME<-sub("ImmuneScore", "ESTIMATE Immune score",estM$NAME)
+estM$NAME<-sub("ESTIMATEScore", "ESTIMATE score",estM$NAME)
+estM<-estM[,c(1,3:4)]
+names(estM)[1:3] <- c("CLINICAL_VAR","SAMPLE_NAME","VALUE")
+estM$PROJECT_NAME<-"SAMSUNG"
+estM$SAMPLE_TYPE<-"Tumor"
+estM$CANCER_TYPE<-"Breast"
+estM$DATA_TYPE<-"continuous"
+estM$CLINICAL_TYPE<-"Subject"
+estM$IS_COMMON<-"Y"
+estM$CATEGORY<-"clinical"
+
+colnams<-c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE","CANCER_TYPE","CLINICAL_TYPE","DATA_TYPE" ,"CLINICAL_VAR",  "VALUE","IS_COMMON","CATEGORY" )
+
+estM<-estM[,colnams]
+
+saveRDS(estM,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/vip_smc_estimate_info.RDS")
+write.table(estM,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/vip_smc_estimate_info.tab",sep="\t",row.names = F,na="",quote=F)
+
+```
+
+```{r GetPurity2, eval=F}
+all<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/all_metadata_long.RDS")
+clin_vars<-as.character(unique(all$CLINICAL_VAR))
+purity<-all[c(grep("[p,P]urity",all$CLINICAL_VAR)),]
+
+saveRDS(purity,"/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/all_PURITY.RDS")
+```
+
+##CIN SCORE
+less /data//scbiod/CompBio/kanz/SMC_YBC/Sample_info/sample_cin_scores.20160205.txt | cut -f1,2 | gawk '{print "SAMSUNG\t"$1"\tTumor\tBREAST\tCIN SCORE\tcontinuous\tWhole_Genome\t"$2"\tsummary statistics\t"$9}' > vip_smc_cin.txt
+```{r GetPurity, eval=F}
+all<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/all_metadata_long.RDS")
+clin_vars<-as.character(unique(all$CLINICAL_VAR))
+CIN_SCORE<-all[c(grep("cinscore",all$CLINICAL_VAR)),]
+#SAMSUNG sample_id       Tumor   BREAST  CIN SCORE       continuous      Whole_Genome    CIN_SCORE       summary statistics
+names(CIN_SCORE)[1]<-"SAMSUNG"
+names(CIN_SCORE)[2]<-"sample_id"
+names(CIN_SCORE)[3]<-"Tumor"
+names(CIN_SCORE)[4]<-"BREAST"
+names(CIN_SCORE)[6]<-"CIN SCORE"
+names(CIN_SCORE)[7]<-"continuous"
+names(CIN_SCORE)[8]<-"CIN_SCORE"
+CIN_SCORE$Whole_Genome<-"Whole_Genome"
+CIN_SCORE$summary_statistics<-"summary statistics"
+CIN_SCORE<-CIN_SCORE[,c(1:4,6:7,12,8,11)]
+CIN_SCORE[,"CIN SCORE"] <-"CIN SCORE"
+saveRDS(CIN_SCORE,"/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/all_CIN_SCORE.RDS")
+
+```
+####--CLONALITY
+less $LJCB_WORK/julio/work/tumor_clonality/SciClone/results/clonality_summary.txt | cut -f 1,3 | gawk '{print "SAMSUNG\t"$1"\tTumor\tBREAST\tCLONALITY\tcontinuous\tClonality\t"$2"\tsummary statistics\t"$9}' > vip_smc_clonality.txt
+
+####--CNV Derived from the ESF$VIP$cnv   of the ESF Rdata objoect
+
+less SMC_cnv_vip.txt | gawk 'BEGIN {FS = "\t"} {print "SAMSUNG\t"$1"\tTumor\tBREAST\tCOPY NUMBER\tcontinuous\t"$2"\t"$6"\tomics\t"$9}' > vip_smc_cnv.txt
+
+grep Amp SMC_cnv_vip.txt | gawk 'BEGIN {FS = "\t"} {print "SAMSUNG\t"$1"\tTumor\tBREAST\tCN AMPLIFIED\tcontinuous\t"$2"\t"$5"\tomics\t"$9}' > vip_smc_cn_amplified.txt
+
+grep Del SMC_cnv_vip.txt | gawk 'BEGIN {FS = "\t"} {print "SAMSUNG\t"$1"\tTumor\tBREAST\tCN DELETED\tcontinuous\t"$2"\t"$5"\tomics\t"$9}' > vip_smc_cn_deleted.txt
+
+```{r getClonality,  eval=F}
+load("/LJ/CompBio/share/data/omics/SMC_neoadj/Rdata/SMC_neoadj_2018_6_21.RData") #no clonality_info
+names(ESF)
+
+
+```
+
+
+```{r getCNVvip,  eval=F}
+
+vip_cnv<-as.data.frame(ESF$VIP$cnv)
+head(vip_cnv)
+names(vip_cnv)
+vip_cnv$SAMSUNG<-"SAMSUNG"
+vip_cnv$Tumor<-"Tumor"
+vip_cnv$BREAST<-"BREAST"
+vip_cnv$omics<-"omics"
+vip_cnv$COPY_NUMBER <-"COPY NUMBER"
+vip_cnv$continuos <-"continuous"
+
+all_cnv<-vip_cnv[,c(10,1,11,12,14,15,2,6,13,5,9)]
+#CNV
+cnv<-vip_cnv[,c(10,1,11,12,14,15,2,6,13,9)]
+
+#AMP
+AMP<-all_cnv[grep("Amp",as.character(all_cnv$mut_effect)),]
+head(AMP)
+AMP<-AMP[,c(1:7,10,9,11)]
+AMP$COPY_NUMBER<-"CN AMPLIFIED"
+names(AMP)<-sub("COPY_NUMBER","CN_AMPLIFIED", names(AMP))
+names(AMP)<-sub("mut_effect","Amp", names(AMP))
+
+#DEL
+DEL<-all_cnv[grep("Del",as.character(all_cnv$mut_effect)),]
+head(DEL)
+DEL<-DEL[,c(1:7,10,9,11)]
+DEL$COPY_NUMBER<-"CN DELETED"
+names(DEL)<-sub("COPY_NUMBER","CN_DELETED", names(DEL))
+names(DEL)<-sub("mut_effect","Del", names(DEL))
+
+#save as a list
+save(list=c("cnv","AMP","DEL"),file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/cnv_final.rda" )
+
+```
+
+####--MUTATIONS   derived from ESF$VIP$mut R-object slot 
+less SMC_mut_vip.txt | gawk 'BEGIN {FS = "\t"} {print "SAMSUNG\t"$1"\tTumor\tBREAST\tMUTATION\tdiscrete\t"$2"\t"$5"\tomics\t"$4"\t"$6"\t"$7}' > vip_smc_mutations.txt
+```{r getMutations,  eval=F}
+load("/LJ/CompBio/share/data/omics/SMC_neoadj/Rdata/SMC_neoadj_2018_6_21.RData")
+names(ESF)
+mut<-as.data.frame(ESF$VIP$mut)
+mut$SAMSUNG<-"SAMSUNG"
+mut$Tumor<-"Tumor"
+mut$BREAST<-"BREAST"
+mut$omics<-"omics"
+mut$MUTATION <-"MUTATION"
+mut$discrete <-"discrete"
+
+head(mut)
+mut<-mut[,c(8,1,9,10,12,13,2,5,11,4,6,7)]
+saveRDS(mut,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/mutation_final.RDS")
+
+```
+
+###--EXPRESSION
+perl /data/scbiod/CompBio/scripts/julio/svn/julio/scripts/pivot_expression_smc.pl -input SMC_expression_tpm_matrix.txt -output vip_smc_expression.txt
+PROJECT_NAME    SAMPLE_NAME     SAMPLE_TYPE     CANCER_TYPE     TYPE    DATA_TYPE       VARIABLE        VALUE   CATEGORY
+SAMSUNG BB01_002        Tumor   BREAST  RNA-SEQ EXPRESSION      continuous      5_8S_rRNA       0       omics
+SAMSUNG BB01_004        Tumor   BREAST  RNA-SEQ EXPRESSION      continuous      5_8S_rRNA       0       omics
+SAMSUNG BB01_004_N      Tumor   BREAST  RNA-SEQ EXPRESSION      continuous      5_8S_rRNA       0       omics
+SAMSUNG BB01_005        Tumor   BREAST  RNA-SEQ EXPRESSION      continuous      5_8S_rRNA       0       omics
+SAMSUNG BB01_005_N      Tumor   BREAST  RNA-SEQ EXPRESSION      continuous      5_8S_rRNA       0       omics
+SAMSUNG BB01_006        Tumor   BREAST  RNA-SEQ EXPRESSION      continuous      5_8S_rRNA       0       omics
+SAMSUNG BB01_007        Tumor   BREAST  RNA-SEQ EXPRESSION      continuous      5_8S_rRNA       0       omics
+SAMSUNG BB01_008        Tumor   BREAST  RNA-SEQ EXPRESSION      continuous      5_8S_rRNA       0       omics
+SAMSUNG BB01_009        Tumor   BREAST  RNA-SEQ EXPRESSION      continuous      5_8S_rRNA       0       omics
+
+```{r getexpressiondat,  eval=F}
+
+head(ESF$exp_tpm)
+
+exp_tpm<-as.data.frame(ESF$exp_tpm)
+
+exp_tpm$Gene_Symbols<-rownames(exp_tpm)
+
+exp_long<-melt(exp_tpm,measure.vars =1:228 )
+
+#PROJECT_NAME    SAMPLE_NAME     SAMPLE_TYPE     CANCER_TYPE     TYPE    DATA_TYPE       VARIABLE        VALUE   CATEGORY
+
+exp_long$PROJECT_NAME<- "SAMSUNG"
+exp_long$SAMPLE_NAME<- as.character(exp_long$variable)
+exp_long$SAMPLE_TYPE<-"Tumor"
+exp_long$CANCER_TYPE<-"BREAST"
+exp_long$TYPE<-"RNA-SEQ"
+exp_long$DATA_TYPE<-"continuous"
+exp_long$VARIABLE<-as.character(exp_long$Gene_Symbols)
+exp_long$VALUE<-exp_long$value
+exp_long$CATEGORY<-"omics"
+
+exp_long<-exp_long[,c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE","CANCER_TYPE","TYPE","DATA_TYPE","VARIABLE","VALUE","CATEGORY")]
+
+saveRDS(exp_long,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/expression_data.RDS")
+```
+
+
+
+###--GSVA
+less SMC_GSVA_score.txt | gawk 'BEGIN {FS = "\t"} {print "SAMSUNG\t"$2"\tTumor\tBREAST\t"$4"\tcontinuous\t"$1"\t"$3"\tsignatures"}' > vip_smc_gsva.txt
+
+sed -i 's/angelova/ANGELOVA/' vip_smc_gsva.txt
+sed -i 's/bindea/BINDEA/' vip_smc_gsva.txt
+sed -i 's/C2_BIOCARTA/C2 BIOCARTA/' vip_smc_gsva.txt
+sed -i 's/C2_canonical_others/C2 CANONICAL OTHERS/' vip_smc_gsva.txt
+sed -i 's/C2_CGP/C2 CGP/' vip_smc_gsva.txt
+sed -i 's/C2_KEGG/C2 KEGG/' vip_smc_gsva.txt
+sed -i 's/C2_REACTOME/C2 REACTOME/' vip_smc_gsva.txt
+sed -i 's/C5_GO/C5 GO/' vip_smc_gsva.txt
+sed -i 's/C6_ONCOGENIC/ONCOGENIC/' vip_smc_gsva.txt
+sed -i 's/H_hallmark/H HALLMARK/' vip_smc_gsva.txt
+```{r getgsvadat,  eval=F}
+head(ESF$GSVA)
+gsva<-as.data.frame(ESF$GSVA)
+gsva$Sigs<-rownames(gsva)
+head(gsva)
+
+#filter to experimental samples only
+meta<-as.data.frame(ESF$annotation)
+meta<-meta[,c(1:3)]
+meta$sample_id<-as.character(meta$sample_id)
+
+
+samp_int<-intersect(names(gsva),meta$sample_id)
+gsva_sams<-gsva[,c(samp_int, "Sigs")]
+#geneset annotation text
+#load("/LJ/CompBio/share/data/omics/SMC_neoadj/Rdata/SMC_BC.Rdata") #no all annotations
+load("/LJ/CompBio/work/dingying85/geneset/database_combine_v5.2_v3.Rdata") #complete_name
+ names(database_new)
+ head(database_new$genesets)
+ head(database_new$annotation) # include pathway_name and pathway_class
+genset<-as.data.frame(database_new$annotation)
+
+#Get  gene_pathways_annotations
+gsva_anno<-merge(gsva_sams,genset, by.x="Sigs", by.y="pathway_name", all.x=T)
+
+#get a long table
+gsva_long<-melt(gsva_anno,measure.vars =2:233 )
+
+gsva_long$SAMSUNG<- "SAMSUNG"
+names(gsva_long)<-sub("variable","sample_id", names(gsva_long))
+gsva_long$Tumor<-"Tumor"
+gsva_long$BREAST<-"BREAST"
+gsva_long$continuous<-"continuous"
+names(gsva_long)<-sub("Sigs","type", names(gsva_long))
+gsva_long$signatures<-"signatures"
+
+gsva_long<-gsva_long[,c(5,3,6,7,2,8,1,4,9)]
+saveRDS(gsva_long,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/GSVA_SMC.RDS")
+
+
+```
+
+###--IHC
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -input SMC_BC_IHC_PFIZER_data.20160926.txt -output vip_smc_ihc_pfizer.txt -datatype ihc_pfizer -samples SMC_metadata.txt -project SAMSUNG
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -input SMC_BC_IHC_MOSAIC_data.20160926.txt -output vip_smc_ihc_mosaic.txt -datatype ihc_mosaic -samples SMC_metadata.txt -project SAMSUNG
+
+ex.
+PROJECT_NAME SAMPLE_NAME SAMPLE_TYPE CANCER_TYPE TYPE  DATA_TYPE             VARIABLE       VALUE           CATEGORY
+SAMSUNG     BB01_061     Tumor      BREAST  TIL CLASSIFICATION PFIZER discrete til subtype original 1.high  IHC
+
+```{r getIHC,  eval=F}
+#load the long meta_data table with clinical variants 
+all_meta<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/all_metadata_long.RDS")
+ #grep all "Ihc" related rows
+ihc_only<-grep("immunohistochemical",all_meta$CLINICAL_VAR)
+ihc_subtype<-grep("ihc_subtype",all_meta$CLINICAL_VAR)
+consensus_subtype<-grep("consensus_subtype",all_meta$CLINICAL_VAR)
+ihc_TIL_count<-grep("TIL_count",all_meta$CLINICAL_VAR)
+ihc_TIL_density<-grep("TIL_density",all_meta$CLINICAL_VAR)
+ihc_Total_tissue_area<-grep("Total_tissue_area",all_meta$CLINICAL_VAR)
+ihc_meta<-all_meta[c(ihc_only,ihc_subtype,consensus_subtype,ihc_TIL_count,ihc_TIL_density,ihc_Total_tissue_area),]
+
+ihc_meta$CATEGORY <-"IHC"
+#Still nee TYPE info.
+
+saveRDS(ihc_meta,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/IHC_meta_draft.RDS")
+```
+
+###--CYTscore
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -input SMC_metadata.txt -output vip_smc_cytscore.txt -datatype cyt_score -samples SMC_metadata.txt -project SAMSUNG
+vip_smc_cytscore.txt
+ ex.
+ PROJECT_NAME SAMPLE_NAME SAMPLE_TYPE CANCER_TYPE               TYPE  DATA_TYPE   VARIABLE     VALUE    CATEGORY
+ SAMSUNG    BB01_062       Tumor      BREAST      CYTOLYTIC ACTIVITY continuous   CYT_SCORE   17.941357    summary statistic
+
+```{r getCYTscore,  eval=F}
+#example
+ex_cyt<-read.table("/LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cytscore.txt", header=T,sep="\t")
+
+ 
+
+all_meta<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/all_metadata_long.RDS")
+ #grep all "cytscore" related rows
+cyt_score<-grep("m_cytscore",all_meta$CLINICAL_VAR)
+cyt_meta<-all_meta[cyt_score,]
+
+#fix column Names
+names(cyt_meta)<-sub("CLINICAL_TYPE","TYPE", names(cyt_meta))
+cyt_meta$TYPE<-"CYTOLYTIC ACTIVITY"
+
+cyt_meta$CATEGORY<-"summary statistic"
+
+names(cyt_meta)<-sub("CLINICAL_VAR","VARIABLE", names(cyt_meta))
+
+cyt_meta$VARIABLE<-sub("_cytscore","_CYT_SCORE",cyt_meta$VARIABLE)
+
+saveRDS(cyt_meta,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/CYT_Score_draft.RDS")
+```
+
+
+###--NMF
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -input SMC_metadata.txt -output vip_smc_nmf.txt -datatype nmf -samples SMC_metadata.txt -project SAMSUNG
+PROJECT_NAME SAMPLE_NAME SAMPLE_TYPE CANCER_TYPE TYPE  DATA_TYPE  VARIABLE        VALUE   CATEGORY
+1      SAMSUNG       BR105       Tumor      BREAST  NMF continuous F1.stroma 1.836791e-02 signatures
+```{r NMF,  eval=F}
+#example
+ex_mnf<-read.table("/LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_nmf.txt", header=T,sep="\t")
+
+#get only sample names
+all_meta<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/all_metadata_long.RDS")
+sample_names<-as.character(unique(all_meta$SAMPLE_NAME))
+
+gene_factor<-as.data.frame(ESF$NMF[[1]])
+sample_factor<-as.data.frame(ESF$NMF[[2]])
+sampOnly_factor<-sample_factor[,intersect(as.character(names(sample_factor)),sample_names)] # only 227 samples_names
+
+#edit 14 variablea
+rownames(sampOnly_factor)
+
+colnames(gene_factor)<-sub("\\:","\\.",colnames(gene_factor))
+colnames(gene_factor)<-rownames(sampOnly_factor)
+
+sampOnly_factor$Row.names<-rownames(sampOnly_factor)
+
+
+tgene_factor<-as.data.frame(t(gene_factor))
+tgene_factor$Row.names<-rownames(tgene_factor)
+
+
+#all_NMF<-merge(sampOnly_factor,tgene_factor, by.x="Row.names","Row.names")
+all_perSample_NMF<-melt(sampOnly_factor,id.vars="Row.names")
+#Get only Samples
+#all_NMF<-all_NMF[,c("Row.names",intersect(as.character(names(all_NMF)),sample_names))]
+
+#all_perSample_NMF<-melt(all_NMF,id.vars="Row.names")
+
+##Add additional Metadata_Cols
+
+names(all_perSample_NMF)<-c("VARIABLE","SAMPLE_NAME","VALUE")
+
+all_perSample_NMF$PROJECT_NAME <-"SAMSUNG"
+all_perSample_NMF$SAMPLE_TYPE <-"Tumor"
+all_perSample_NMF$CANCER_TYPE <-" TYPE"
+all_perSample_NMF$TYPE <-"NMF"
+all_perSample_NMF$DATA_TYPE <-"continuous"
+all_perSample_NMF$CATEGORY <-"signatures"
+
+all_perSample_NMF<-all_perSample_NMF[,c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE",
+                                        "CANCER_TYPE","TYPE","DATA_TYPE","VARIABLE","VALUE","CATEGORY")]
+
+
+saveRDS(all_perSample_NMF, file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/all_NMF_perSample.RDS")
+```
+
+
+FIX tumor normal sample classification in files
+===============================================
+Samples with name "_n" correspond to normals.
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -input vip_smc_cnv.txt -output vip_smc_cnv_final.txt -datatype copy_number -samples SMC_metadata.txt -project SAMSUNG
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -input vip_smc_cn_amplified.txt -output vip_smc_cn_amplified_final.txt -datatype cn_amplified -samples SMC_metadata.txt -project SAMSUNG
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -input vip_smc_cn_deleted.txt -output vip_smc_cn_deleted_final.txt -datatype cn_deleted -samples SMC_metadata.txt -project SAMSUNG
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -input vip_smc_mutations.txt -output vip_smc_mutations_final.txt -datatype mutation -samples SMC_metadata.txt -project SAMSUNG
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -input vip_smc_expression.txt -output vip_smc_expression_final.txt -datatype omics -samples SMC_metadata.txt -project SAMSUNG
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -input vip_smc_gsva.txt  -output vip_smc_gsva_final.txt -datatype omics -samples SMC_metadata.txt -project SAMSUNG
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -input vip_smc_cin.txt  -output vip_smc_cin_final.txt -datatype omics -samples SMC_metadata.txt -project SAMSUNG
+perl /LJ/CompBio/share/data/omics/SMC_YBC/vip/SCRIPTS/parse_to_vip.pl -input vip_smc_clonality.txt  -output vip_smc_clonality_final.txt -datatype omics -samples SMC_metadata.txt -project SAMSUNG
+
+```{r checkNormals,  eval=F}
+all_meta<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/all_metadata_long.RDS")
+sample_names<-as.character(unique(all_meta$SAMPLE_NAME))
+
+norms<-grep("_n$", sample_names) 
+
+```
+
+# Prepare configuration files for VIP
+===================================
+For vip_omics_types.txt
+cat *_final.txt vip_smc_cytscore.txt vip_smc_nmf.txt vip_smc_ihc_pfizer.txt vip_smc_ihc_mosaic.txt| cut -f5,6,9 | sort -u > vip_smc_omics_typs.txt
+
+```{r prepOmicsConfigFiles,  eval=F}
+
+ex.omics<-read.table("/LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_omics_types.txt", header=T, sep="\t")
+#*_final.txt
+path<-"/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/"
+#cin #some samples have "values= NA"  How do we handle these?
+vip_smc_cin_final<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/all_CIN_SCORE.RDS")
+col_names<-c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE", "CANCER_TYPE","TYPE", "DATA_TYPE", "VARIABLE", "VALUE", "CATEGORY")
+names(vip_smc_cin_final)<-col_names
+vip_smc_cin_final$VARIABLE<-"Whole_Exome"
+saveRDS(vip_smc_cin_final,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_cin_final.RDS")
+write.table(vip_smc_cin_final,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_cin_final.tab",sep="\t",row.names = F,na="",quote = F)
+
+#clonality #No clonality
+
+#all_cnv_cn
+#cn_amplified
+load("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/cnv_final.rda")
+
+vip_smc_cn_amplified<-AMP
+col_names<-c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE", "CANCER_TYPE","TYPE", "DATA_TYPE", "VARIABLE", "VALUE", "CATEGORY", "TIER")
+names(vip_smc_cn_amplified)<-col_names
+saveRDS(vip_smc_cn_amplified,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/vip_smc_cn_amplified_final.RDS")
+write.table(vip_smc_cn_amplified,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/vip_smc_cn_amplified_final.tab",sep="\t",row.names = F,na="",quote = F)
+
+#cn_deleted
+vip_smc_cn_deleted<-DEL
+col_names<-c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE", "CANCER_TYPE","TYPE", "DATA_TYPE", "VARIABLE", "VALUE", "CATEGORY", "TIER")
+names(vip_smc_cn_deleted)<-col_names
+saveRDS(vip_smc_cn_deleted,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_cn_deleted_final.RDS")
+write.table(vip_smc_cn_deleted,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_cn_deleted_final.tab",sep="\t",row.names = F,na="",quote = F)
+
+#cnv_final
+vip_smc_cnv_final<-cnv
+col_names<-c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE", "CANCER_TYPE","TYPE", "DATA_TYPE", "VARIABLE", "VALUE", "CATEGORY", "TIER")
+names(vip_smc_cnv_final)<-col_names
+saveRDS(vip_smc_cnv_final,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_cnv_final.RDS")
+write.table(vip_smc_cnv_final,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_cnv_final.tab",sep="\t",row.names = F,na="",quote = F)
+
+
+#expression_data
+vip_smc_expression_final<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/expression_data.RDS")
+col_names<-c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE", "CANCER_TYPE","TYPE", "DATA_TYPE", "VARIABLE", "VALUE", "CATEGORY")
+names(vip_smc_expression_final)<-col_names
+saveRDS(vip_smc_expression_final,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_expression_final.RDS")
+write.table(vip_smc_expression_final,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_expression_final.tab",sep="\t",row.names = F,na="",quote = F)
+
+
+#gsva_data Paathway class is empty for other 
+vip_smc_gsva_final<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/GSVA_SMC.RDS")
+names(vip_smc_gsva_final)
+
+col_names<-c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE", "CANCER_TYPE","TYPE", "DATA_TYPE", "VARIABLE", "VALUE", "CATEGORY")
+names(vip_smc_gsva_final)<-col_names
+
+
+vip_smc_gsva_final$TYPE<-sub("angelova","ANGELOVA", vip_smc_gsva_final$TYPE)
+vip_smc_gsva_final$TYPE<-sub("bindea","BINDEA" ,vip_smc_gsva_final$TYPE)
+vip_smc_gsva_final$TYPE<-sub("C2_BIOCARTA","C2 BIOCARTA",vip_smc_gsva_final$TYPE)
+vip_smc_gsva_final$TYPE<-sub("C2_canonical_others","C2 CANONICAL OTHERS",vip_smc_gsva_final$TYPE)
+vip_smc_gsva_final$TYPE<-sub("C2_CGP","C2 CGP",vip_smc_gsva_final$TYPE)
+vip_smc_gsva_final$TYPE<-sub("C2_KEGG","C2 KEGG", vip_smc_gsva_final$TYPE)
+vip_smc_gsva_final$TYPE<-sub("C2_REACTOME","C2 REACTOME",vip_smc_gsva_final$TYPE)
+vip_smc_gsva_final$TYPE<-sub("C5_GO","C5 GO",vip_smc_gsva_final$TYPE)
+vip_smc_gsva_final$TYPE<-sub("C6_oncogenic","ONCOGENIC",vip_smc_gsva_final$TYPE)
+vip_smc_gsva_final$TYPE<-sub("H_hallmark","H HALLMARK", vip_smc_gsva_final$TYPE)
+
+
+saveRDS(vip_smc_gsva_final,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_gsva_final.RDS")
+write.table(vip_smc_gsva_final,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_gsva_final.tab",sep="\t",row.names = F,na="",quote = F)
+
+
+#Mutation final
+vip_smc_mutations_final<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/mutation_final.RDS")
+
+col_names<-c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE", "CANCER_TYPE","TYPE", "DATA_TYPE", "VARIABLE", "VALUE", "CATEGORY","MUTATION_TYPE","DETAILS","TIER")
+names(vip_smc_mutations_final)<-col_names
+saveRDS(vip_smc_mutations_final,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_mutations_final.RDS")
+write.table(vip_smc_mutations_final,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_mutations_final.tab",sep="\t",row.names = F,na="",quote=F)
+
+
+##vip_smc_cytscore.txt  # How best to handle "NAs/blank" fields
+
+vip_smc_cytscore<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/CYT_Score_draft.RDS")
+col_names<-c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE", "CANCER_TYPE","TYPE", "DATA_TYPE", "VARIABLE", "VALUE", "CATEGORY")
+
+vip_smc_cytscore$VARIABLE<-"CYT_SCORE"
+vip_smc_cytscore<-vip_smc_cytscore[c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE" , "CANCER_TYPE","TYPE","DATA_TYPE","VARIABLE","VALUE",      "CATEGORY")]
+saveRDS(vip_smc_cytscore,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_cytscore.RDS")
+write.table(vip_smc_cytscore,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_cytscore.tab",sep="\t",row.names = F,na="",quote=F)
+
+#vip_smc_nmf.txt 
+
+vip_smc_nmf<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/all_NMF_perSample.RDS")
+vip_smc_nmf$CANCER_TYPE<-"BREAST"
+
+saveRDS(vip_smc_nmf,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_nmf.RDS")
+write.table(vip_smc_nmf,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_nmf.tab",sep="\t",row.names = F,na="",quote=F)
+
+#vip_smc_ihc.txt  "TYPE" iffy??
+
+vip_smc_ihc<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/IHC_meta_draft.RDS")
+col_names<-c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE", "CANCER_TYPE","TYPE", "DATA_TYPE", "VARIABLE", "VALUE", "CATEGORY")
+
+names(vip_smc_ihc)<-sub("CLINICAL_VAR","VARIABLE",names(vip_smc_ihc))
+
+names(vip_smc_ihc)<-sub("CLINICAL_TYPE ","TYPE",names(vip_smc_ihc))
+vip_smc_ihc$TYPE<-"IHC"
+
+vip_smc_ihc<-vip_smc_ihc[,c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE", "CANCER_TYPE","TYPE", "DATA_TYPE", "VARIABLE", "VALUE", "CATEGORY")]
+
+saveRDS(vip_smc_ihc,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_ihc.RDS")
+write.table(vip_smc_ihc,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_ihc.tab",sep="\t",row.names = F,na="",quote=F)
+
+#cat *_final.txt vip_smc_cytscore.txt vip_smc_nmf.txt vip_smc_ihc_pfizer.txt vip_smc_ihc_mosaic.txt
+#vip_smc_cin_final.txt        vip_smc_cn_amplified_final.txt  vip_smc_cnv_final.txt         vip_smc_gsva_final.txt
+#vip_smc_clonality_final.txt  vip_smc_cn_deleted_final.txt    vip_smc_expression_final.txt  vip_smc_mutations_final.txt
+
+## new smc_out
+#vip_smc_cin_final.tab            vip_smc_cn_deleted_final.tab  vip_smc_expression_final.tab  vip_smc_mutations_final.tab
+ #vip_smc_cn_amplified_final.tab  vip_smc_cnv_final.tab         vip_smc_gsva_final.tab
+
+
+system("cat *_final.tab vip_smc_cytscore.tab vip_smc_nmf.tab  vip_smc_ihc.tab | cut -f5,6,9 | sort -u > vip_smc_omics_types.txt")
+
+```
+
+
+###For vip_clinical_types.txt
+less vip_smc_clinical_info.txt | gawk 'BEGIN{FS = "\t"}{print $7"\t"$6"\t"$10}' | sort -u > vip_smc_clinical_types.txt
+```{r getClinicalConfig,  eval=F}
+vip_smc_clinical_info<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/all_metadata_long.RDS")
+col_names<-c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE","CANCER_TYPE","CLINICAL_TYPE","DATA_TYPE","CLINICAL_VAR","VALUE","IS_COMMON",
+             "CATEGORY")
+
+vip_smc_clinical_info<-vip_smc_clinical_info[,col_names]
+vip_smc_clinical_info$CATEGORY<-"clinical"
+
+saveRDS(vip_smc_clinical_info,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_clinical_info.RDS")
+write.table(vip_smc_clinical_info,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_clinical_info.tab",sep="\t",row.names = F,na="",quote=F)
+
+colms<- 'BEGIN{FS = "\t"}{print $7"\t"$6"\t"$10}'
+#system(paste("less vip_smc_clinical_info.tab | gawk  ",colms,"| sort -u > vip_smc_clinical_types.tab", sep=""))
+
+clin_vars<-readRDS("final_uploadData/vip_smc_clinical_info.RDS")
+clin_vars<-vip_smc_clinical_info[,c(7,6,10)]
+clin_vars<-unique(clin_vars)  
+write.table(clin_vars,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_clinical_types.tab",sep="\t",row.names = F,na="", col.names=F, quote=F)
+
+```
+
+
+###For vip_unique_variables.txt
+```{bash getuniquevars, eval=F}
+cat *_final.tab vip_smc_cytscore.txt vip_smc_nmf.tab vip_smc_ihc.tab | gawk 'BEGIN{FS = "\t"}{print $1"."$4"\t"$5"\t"$6"\t"$7"\t"$9}' | sort -u > vip_smc_unique_omics.tab
+less vip_smc_clinical_info.tab | gawk 'BEGIN{FS = "\t"}{print $1"."$4"\t"$5"\t"$6"\t"$7"\t"$10}' | sort -u > vip_smc_unique_clinical.tab
+```
+
+
+```{r vipUniqueVariables, eval=F}
+
+omics_files<-list.files(pattern="final.tab$", full.names = T)
+
+
+```
+
+###For vip_samples.txt
+
+
+```{bash samplesConfig, eval=F}
+
+less vip_smc_clinical_info.tab | gawk 'BEGIN{FS = "\t"}{print $1"\t"$2"\t"$3"\t"$4}' | sort -u > vip_smc_samples.tab
+
+##No files : confused here
+cat /LJ/CompBio/share/data/omics/VIP/portal_data/vip_samples_09302016.txt vip_smc_samples.txt > /LJ/CompBio/share/data/omics/VIP/portal_data/vip_samples.txt
+
+cat /LJ/CompBio/share/data/omics/VIP/portal_data/retired/vip_unique_variables_09302016.txt vip_smc_unique_omics.txt vip_smc_unique_clinical.txt >  /LJ/CompBio/share/data/omics/VIP/portal_data/vip_unique_variables.txt
+
+
+cat /LJ/CompBio/share/data/omics/VIP/portal_data/vip_clinical_types_09302016.txt vip_smc_clinical_types.txt | sort -u  >  /LJ/CompBio/share/data/omics/VIP/portal_data/vip_clinical_types.txt
+```
+###Add additional clinical data and curation
+=========================================
+
+```{bash, eval=F}
+
+#less /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_clinical_info.txt | cut -f1,2,3,4 | sort -u > /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_additional_clinical.txt
+
+less vip_smc_clinical_info.tab | cut -f1,2,3,4 | sort -u >vip_additional_clinical.tab
+
+#grep "Subtype consensus" /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_clinical_info.txt  > /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_predicted_subtype_clinical.txt
+
+
+grep "consensus_subtype" vip_smc_clinical_info.tab  > vip_predicted_subtype_clinical.txt
+```
+###Add GSVA scores
+===============
+less $LJCB_WORK/dingying85/YBC_project/VIP/SMC_GSVA_score.txt | gawk 'BEGIN {FS = "\t"} {print "SAMSUNG\t"$2"\tTumor\tBREAST\t"$4"\tcontinuous\t"$1"\t"$3"\tsignatures"}' > vip_smc_gsva.txt
+vip_smc_gsva.txt
+sed -i 's/angelova/ANGELOVA/' vip_smc_gsva.txt
+sed -i 's/bindea/BINDEA/' vip_smc_gsva.txt
+sed -i 's/C2_BIOCARTA/C2 BIOCARTA/' vip_smc_gsva.txt
+sed -i 's/C2_canonical_others/C2 CANONICAL OTHERS/' vip_smc_gsva.txt
+sed -i 's/C2_CGP/C2 CGP/' vip_smc_gsva.txt
+sed -i 's/C2_KEGG/C2 KEGG/' vip_smc_gsva.txt
+sed -i 's/C2_REACTOME/C2 REACTOME/' vip_smc_gsva.txt
+sed -i 's/C5_GO/C5 GO/' vip_smc_gsva.txt
+sed -i 's/C6_ONCOGENIC/ONCOGENIC/' vip_smc_gsva.txt
+sed -i 's/H_hallmark/H HALLMARK/' vip_smc_gsva.txt
+
+ex. SAMSUNG sample_id      Tumor   BREAST    pathwbay_class    continuous      type    value   signatures
+SAMSUNG    BB01_002        Tumor   BREAST    C2 KEGG          continuous      KEGG_GLYCOLYSIS_GLUCONEOGENESIS -0.48852438499609  signatures
+
+```{r addGSVAscores, eval=F}
+vip_smc_gsva<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/GSVA_SMC.RDS")
+
+head(vip_smc_gsva)
+
+ex_gsva<-read.table("/LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_gsva.txt", header=T, sep="\t", stringsAsFactors=F)
+#check for empty pathway_class
+gsva_NA<-(vip_smc_gsva[is.na(vip_smc_gsva$pathway_class),])
+
+type_NOannos<-unique(gsva_NA$type)
+#see previous annotation
+Lm22<-ex_gsva[grep("LM22",ex_gsva$pathway_class),] ## previously annotated as LM22 - pathway class
+vip_smc_gsva$pathway_class[grep("LM22",vip_smc_gsva$type)] <-"LM22"
+
+#check for empty pathway_class, and attempt to annotate
+gsva_NA<-(vip_smc_gsva[is.na(vip_smc_gsva$pathway_class),]) #CD11b+DC -C7: immunologic signatures (http://software.broadinstitute.org/gsea/msigdb/cards/GSE17322_CD103_POS_VS_CD11B_HIGH_LUNG_DC_DN.html)
+
+CD11b<-ex_gsva[grep("immunologic",ex_gsva$pathway_class),]
+CD11b<-vip_smc_gsva[grep("CD11b+DC",vip_smc_gsva$pathway_class),]
+
+vip_smc_gsva$pathway_class[grep("CD11b\\+DC",vip_smc_gsva$type)] <-"C7: immunologic signatures"
+vip_smc_gsva$type<-sub("CD11b\\+DC\n","CD11b+DC",vip_smc_gsva$type  )
+
+vip_smc_gsva$pathway_class<-sub("angelova","ANGELOVA", vip_smc_gsva$pathway_class)
+vip_smc_gsva$pathway_class<-sub("bindea","BINDEA", vip_smc_gsva$pathway_class)
+vip_smc_gsva$pathway_class<-sub("C2_BIOCARTA","C2 BIOCARTA", vip_smc_gsva$pathway_class)
+vip_smc_gsva$pathway_class<-sub("C2_canonical_others","C2 CANONICAL OTHERS", vip_smc_gsva$pathway_class)
+vip_smc_gsva$pathway_class<-sub("C2_CGP","C2 CGP", vip_smc_gsva$pathway_class)
+vip_smc_gsva$pathway_class<-sub("C2_KEGG","C2 KEGG", vip_smc_gsva$pathway_class)
+vip_smc_gsva$pathway_class<-sub("C2_REACTOME","C2 REACTOME", vip_smc_gsva$pathway_class)
+vip_smc_gsva$pathway_class<-sub("C5_GO","C5 GO", vip_smc_gsva$pathway_class)
+vip_smc_gsva$pathway_class<-sub("C6: oncogenic signatures","C6 ONCOGENIC", vip_smc_gsva$pathway_class)
+vip_smc_gsva$pathway_class<-sub("H_hallmark","H HALLMARK", vip_smc_gsva$pathway_class)
+vip_smc_gsva$pathway_class<-sub("C7: immunologic signatures","C7 IMMUNOLOGIC", vip_smc_gsva$pathway_class)
+vip_smc_gsva$pathway_class<-sub("\\:","", vip_smc_gsva$pathway_class)
+saveRDS(vip_smc_gsva,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_gsva.RDS")
+write.table(vip_smc_gsva,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_gsva.tab",sep="\t",row.names = F,na="", col.names=F, quote=F)
+
+```
+
+
+###Add Cibersort
+
+https://www.nature.com/articles/nmeth.3337
+cell-type identification by estimating relative subsets of RNA transcripts (CIBERSORT), a computational approach that accurately resolves relative fractions of diverse cell subsets in GEPs from complex tissues (http://cibersort.stanford.edu/).
+
+less $LJCB_WORK/dingying85/YBC_project/VIP/SMC_Cibersort.txt | grep -v immune_p_value | gawk 'BEGIN {FS = "\t"} {print "SAMSUNG\t"$1"\tTumor\tBREAST\tCIBERSORT (cell type p-values)\tcontinuous\t"$2"\t"$4"\tsignatures"}' > vip_smc_cibersort.txt
+less $LJCB_WORK/dingying85/YBC_project/VIP/SMC_Cibersort.txt | grep -v immune_p_value | gawk 'BEGIN {FS = "\t"} {print "SAMSUNG\t"$1"\tTumor\tBREAST\tCIBERSORT (cell type percent)\tcontinuous\t"$2"\t"$3 * 100"\tsignatures"}' > vip_smc_cibersort_fraction.txt
+
+less $LJCB_WORK/dingying85/YBC_project/VIP/SMC_Cibersort.txt |grep immune_p_value | gawk 'BEGIN {FS = "\t"} {print "SAMSUNG\t"$1"\tTumor\tBREAST\tClinical\tcontinuous\tCibersort (p-value)\t"$4"\tY\tsample annotations"}' > vip_smc_cibersort_clinical.txt
+
+ex. PROJECT_NAME    SAMPLE_NAME     SAMPLE_TYPE     CANCER_TYPE     TYPE    DATA_TYPE       VARIABLE        VALUE   CATEGORY
+```{r getCibersort,  eval=F}
+load("/LJ/CompBio/share/data/omics/SMC_neoadj/Rdata/SMC_neoadj_2018_6_21.RData")
+names(ESF)
+head(ESF$CIBERSORT_ABSOLUTE)
+head(ESF$CIBERSORT_RELATIVE)
+  #ABSOLUTE && RELATIVE ???
+getCibersort<-function(dat=CIBERSORT_ABSOLUTE, var=24,id_vars=1, type="CIBERSORT(cell type percent)"){
+  datM<-melt(dat,measure.vars=var, id.vars=id_vars)
+  datM$PROJECT_NAME <-"SAMSUNG"
+  names(datM)<-sub("Input.Sample","SAMPLE_NAME",names(datM))
+  names(datM)<-sub("variable","VARIABLE",names(datM))
+  names(datM)<-sub("value","VALUE",names(datM))
+  datM$SAMPLE_TYPE <-"Tumor"
+  datM$CANCER_TYPE <-"BREAST"
+  datM$TYPE <-type
+  datM$DATA_TYPE <-"continuous"
+  datM$CATEGORY <-"signatures"
+  col_nams<-c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE","CANCER_TYPE","TYPE","DATA_TYPE","VARIABLE","VALUE","CATEGORY")
+  datM<-datM[,col_nams]
+  return(datM)
+}
+#fraction
+#PROJECT_NAME    SAMPLE_NAME     SAMPLE_TYPE     CANCER_TYPE     TYPE    DATA_TYPE       VARIABLE        VALUE   CATEGORY
+#SAMSUNG BB01_002        Tumor   BREAST  CIBERSORT (cell type percent)   continuous      B_naive 0.6146  signatures
+
+vip_smc_cibersort_fraction<-getCibersort(dat=ESF$CIBERSORT_RELATIVE,var=2:23,id_vars=1,type="CIBERSORT(cell type percent)")
+saveRDS(vip_smc_cibersort_fraction,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/vip_smc_cibersort_fraction.RDS")
+write.table(vip_smc_cibersort_fraction,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/vip_smc_cibersort_fraction.tab",sep="\t",row.names = F,na="",quote=F)
+#vip_smc_cibersort get P.values, Pearson_Correlations, RMSE
+
+p_vals<-getCibersort(dat=ESF$CIBERSORT_RELATIVE,var=24,id_vars=1,type="CIBERSORT (cell type p-values)")
+PCC<-getCibersort(dat=ESF$CIBERSORT_RELATIVE,var=25,id_vars=1,type="CIBERSORT (cell Pearson_Correlation)")
+RMSE<-getCibersort(dat=ESF$CIBERSORT_RELATIVE,var=26,id_vars=1,type="CIBERSORT (cell type RMSE)")
+##stack all 3 table values
+all_values<-as.data.frame(rbind(p_vals,PCC,RMSE))
+
+#Merge to get sample_ids and the final table
+getValues<-function(dat_value=p_vals){
+vip_smc_cibersort<-merge(vip_smc_cibersort_fraction[,c(1:4,7)],dat_value,by=c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE","CANCER_TYPE"))
+vip_smc_cibersort<-vip_smc_cibersort[,-8]
+names(vip_smc_cibersort)<-sub("\\.x","",names(vip_smc_cibersort))
+col_nams<-c("PROJECT_NAME","SAMPLE_NAME","SAMPLE_TYPE","CANCER_TYPE","TYPE","DATA_TYPE","VARIABLE","VALUE","CATEGORY")
+
+vip_smc_cibersort<-vip_smc_cibersort[,col_nams]
+return(vip_smc_cibersort)
+}
+vip_smc_cibersort<-getValues(all_values)
+
+saveRDS(all_values,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/vip_smc_cibersort.RDS")
+write.table(all_values,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/vip_smc_cibersort.tab",sep="\t",row.names = F,na="",quote=F)
+
+
+
+
+
+```
+
+
+
+##ADD MUTATION BURDEN
+
+less $LJCB_WORK/dingying85/YBC_project/VIP/SMC_somatic_mutations.txt
+perl /data/scbiod/CompBio/scripts/julio/svn/julio/vip/calculate_mut_burden.pl -input $LJCB_WORK/dingying85/YBC_project/VIP/SMC_somatic_mutation.txt -output /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_mutation_burden.txt
+
+less SMC_mut_vip.txt 
+```{r getMutationBurden, eval=F}
+load("/LJ/CompBio/share/data/omics/SMC_neoadj/Rdata/SMC_neoadj_2018_6_21.RData")
+names(ESF)
+smc_somatic_mutations<-as.data.frame(ESF$mut_call)
+head(vip_smc_mutations)
+
+#example_files fom previous upload
+ex.mut_input<-read.table("/LJ/CompBio/share/data/omics/SMC_YBC/vip/SMC_somatic_mutation.txt", header=T, sep="\t")
+ ex_mut<-read.table("/LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_mutation_burden.txt", header=T, sep="\t")
+ 
+ Mutation <- Mutation[!Mutation$mut_effect %in% c("noncoding","noncoding_rna","synonymous","ambiguous","","splice_site"),]
+ 
+ 
+ write.table(smc_somatic_mutations,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/smc_somatic_mutations.tab",sep="\t",row.names = F,na="",quote=F)
+
+ #system(" perl /data/scbiod/CompBio/scripts/julio/svn/julio/vip/calculate_mut_burden.pl -input smc_somatic_mutations.tab -output vip_smc_mutation_burden.tab")
+ 
+###Get (tally) Mutation burdern  and MUT_background
+mut_burd<- smc_somatic_mutations[!smc_somatic_mutations$mut_effect %in%c("noncoding","noncoding_rna","synonymous","ambiguous","","splice_site"),]
+mut_backgr<-smc_somatic_mutations[smc_somatic_mutations$mut_effect %in%c("noncoding","noncoding_rna","synonymous","ambiguous","","splice_site"),]
+#list of samples
+SAMPLE_NAME<-unique(as.character(mut_filtered$SAMPLE_ID))
+
+#get the counts
+getMuttally<-function(mut_filt=mut_burd, clinvar="MUTATION BURDEN"){ 
+mut_tally<-as.data.frame(SAMPLE_NAME)
+mut_tally$SAMPLE_NAME<-as.character(mut_tally$SAMPLE_NAME)
+mut_tally$PROJECT_NAME<-"SAMSUNG"
+mut_tally$SAMPLE_TYPE<-"Tumor"
+mut_tally$CANCER_TYPE<-"BREAST"
+mut_tally$CLINICAL_TYPE<-"MUT_COUNTS"
+mut_tally$DATA_TYPE  <-"continuous"
+mut_tally$CLINICAL_VAR<-clinvar
+mut_tally$VALUE<-"0"
+mut_tally$IS_COMMON<-"Y"
+mut_tally$CATEGORY<-"Sample annotations"
+
+for(i in seq_along(mut_tally$SAMPLE_NAME)){ 
+mut_tally$VALUE[i]<- length(grep( mut_tally$SAMPLE_NAME[i],mut_filt$SAMPLE_ID))
+}
+colnams<-c("PROJECT_NAME" ,"SAMPLE_NAME","SAMPLE_TYPE","CANCER_TYPE","CLINICAL_TYPE","DATA_TYPE","CLINICAL_VAR" ,"VALUE",         "IS_COMMON","CATEGORY")
+mut_tally<-mut_tally[,colnams]
+return(mut_tally)
+}
+mut_tallyBurden<-getMuttally(mut_filt=mut_burd, clinvar="MUTATION BURDEN")
+mut_tallyBackgrnd<-getMuttally(mut_filt=mut_backgr, clinvar="MUTATION BACKGROUND")
+
+vip_smc_mutation_burden<-rbind(mut_tallyBurden,mut_tallyBackgrnd)
+vip_smc_mutation_burden<-vip_smc_mutation_burden[order(vip_smc_mutation_burden$SAMPLE_NAME),]
+saveRDS(vip_smc_mutation_burden,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_mutation_burden")
+write.table(vip_smc_mutation_burden,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_smc_mutation_burden.tab",sep="\t",row.names = F,na="",quote=F)
+
+```
+
+
+###Add NMF for TCGA and CCLE ????
+
+sample_name     TYPE    value
+BB01_002        F1.stroma       0.0352333975566356
+BB01_004        F1.stroma       0.0151258345368761
+
+
+less $LJCB_WORK/dingying85/YBC_project/VIP/
+perl /LJ/CompBio/share/work/julio/work/vip/add_sample_info_to_vip.pl -input $LJCB_WORK/dingying85/YBC_project/VIP/NMF_factor_for_vip.txt -samples /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/ccle_breast_vip_samples.txt -output /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/vip_ccle_breast_nmf.txt 
+perl /LJ/CompBio/share/work/julio/work/vip/add_sample_info_to_vip.pl -input $LJCB_WORK/dingying85/YBC_project/VIP/NMF_factor_for_vip.txt -samples /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/tcga_r_vip_samples.txt -output /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/vip_tcga_brca_nmf.txt 
+
+Add breast subtypes for TCGA
+============================
+less $LJCB_WORK/dingying85/YBC_project/VIP/
+perl /LJ/CompBio/share/work/julio/work/vip/add_sample_info_to_vip.pl -input $LJCB_WORK/dingying85/YBC_project/VIP/TCGA_subtypes.txt -samples /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/tcga_brca_vip_samples.txt -output /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/vip_tcga_brca_subtypes.txt 
+
+PROJECT_NAME    SAMPLE_NAME     SAMPLE_TYPE     CANCER_TYPE     TYPE    DATA_TYPE       VARIABLE        VALUE   CATEGORY
+TCGA    TCGA-AR-A1AR-01A        Tumor   BRCA    NMF     continuous      subtype_consensus       TN      signatures
+TCGA    TCGA-BH-A1EO-01A        Tumor   BRCA    NMF     continuous      subtype_consensus       ER+     signatures
+TCGA    TCGA-BH-A1ES-01A        Tumor   BRCA    NMF     continuous      subtype_consensus       ER+     signatures
+TCGA    TCGA-BH-A1ES-06A        Tumor   BRCA    NMF     continuous      subtype_consensus       ER+     signatures
+TCGA    TCGA-BH-A1ET-01A        Tumor   BRCA    NMF     continuous      subtype_consensus       ER+     signatures
+
+less /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/vip_tcga_brca_subtypes.txt | gawk 'BEGIN {FS="\t"};{print $1"\t"$2"\t"$3"\t"$4"\tClinical\tdiscrete\t"$7"\t"$8"\tY\tSample annotations"}' > /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/vip_tcga_brca_subtypes_final.txt
+ 
+sed -i 's/ihc_subtype/Subtype ihc/' vip_tcga_brca_subtypes_final.txt  
+sed -i 's/pam50/Subtype pam50/' vip_tcga_brca_subtypes_final.txt  
+sed -i 's/subtype_consensus/Subtype consensus/' vip_tcga_brca_subtypes_final.txt  
+sed -i 's/er or pr+,her2+/ER+HER2+/' vip_tcga_brca_subtypes_final.txt  
+sed -i 's/unknown/UA/' vip_tcga_brca_subtypes_final.txt  
+
+Add breast til subtypes
+=======================
+
+##Load data in VIP
+================
+###################################
+# LOAD DATA FILES TO MONGODB  ->> NEED TO SSH into lj-compbio-dev103.pfizer.com
+###################################
+mongoimport --port 27018 --db VIP --collection clinical_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_clinical_info.txt
+mongoimport --port 27018 --db VIP --collection clinical_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_sample_purity.txt
+mongoimport --port 27018 --db VIP --collection clinical_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_estimate_info.txt
+
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cnv_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cn_amplified_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cn_deleted_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_mutations_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_expression_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_gsva_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_ihc_pfizer.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_ihc_mosaic.txt
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_nmf.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cytscore.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cin_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_clonality_final.txt
+
+mongoimport --port 27018 --db VIP --collection clinical_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_additional_clinical.txt
+mongoimport --port 27018 --db VIP --collection clinical_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_predicted_subtype_clinical.txt
+
+
+mongoimport --port 27018 --db VIP --collection clinical_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cibersort_clinical.txt
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cibersort.txt
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cibersort_fraction.txt
+mongoimport --port 27018 --db VIP --collection clinical_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_mutation_burden.txt
+
+
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/vip_ccle_breast_nmf.txt
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/vip_tcga_brca_nmf.txt
+mongoimport --port 27018 --db VIP --collection clinical_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/vip_tcga_brca_subtypes_final.txt
+
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/julio/vip/vip_samsung_brca_status_germline
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,276 @@
+---
+title: "Asses_NewuploadedData_by_Collection"
+author: "Lala M Motlhabi"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: yes
+    toc_depth: '4'
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+  html_document:
+    code_folding: hide
+    fig_height: 8
+    fig_width: 8
+    keep_md: no
+    output:
+      pandoc_args:
+      - +RTS
+      - -K64m
+      - -RTS
+    self_contained: no
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning  = FALSE)
+knitr::opts_chunk$set(message  = FALSE)
+knitr::opts_chunk$set(tidy = T)
+knitr::opts_chunk$set(strip.white = T)
+```
+```{r config}
+
+library(dplyr)
+library(DT)
+library(reshape2)
+library(mongolite)
+library(stringr)
+library(tidyverse)
+library(tidyr)
+library(data.table)
+library(getopt)
+library(reshape2)
+library(formatR)
+
+```
+#Check upload status by new sample_name:    
+ex.http://datascience-enthusiast.com/R/MongoDB_R_Python.html
+using the R mongolite package
+
+Data formatting to upload to mongodb  guided by the previously uploaded SAMSUNG_YBC data
+
+07/18/2018: We may need to reupload the data under a different "PROJECT_NAME" , namely "SMC_NAC"
+
+final_formatted_data- uploaded under project_name "SAMSUNG"
+
+##collection clinical_data_dev : filtered to only the newly uploaded "SAMPLE_NAMES"  
+
+
+```{r CheckCollectionClinicalUpload, eval=F}
+#Mongolite
+
+m<-mongolite::mongo("clinical_data", db="VIP",url="mongodb://lj-compbio-dev103:27018")
+m$count() 
+
+#see how data looks like
+m$iterate()$one()
+
+#How many distinct "PROJECT_NAME"
+length(m$distinct("PROJECT_NAME"))
+
+#SMC
+m$count('{"PROJECT_NAME" : "SAMSUNG" }') 
+
+# Read all the data back into R
+#db.getCollection("clinical_data_dev").find({"PROJECT_NAME" : "SAMSUNG"})
+dat<-as.data.frame(m$find('{"PROJECT_NAME" : "SAMSUNG"}'))
+clinical_config<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/vip_smc_final_clinical_types.RDS")
+
+#attempted to load:
+clinical_upload<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/vip_smc_clinical_info.RDS")
+
+#clinical_config<-read.table("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/vip_smc_final_clinical_types.tab", header=T, stringsAsFactors=F)
+new_sample_data<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/vip_smc_final_samples.RDS")
+
+#check if new samples are in db
+
+dat_new<-merge(dat,new_sample_data,by.x=names(dat)[1:4],by.y=names(new_sample_data)[1:4])
+
+#How many unique samples
+length(unique(dat_new$SAMPLE_NAME))
+
+
+
+
+datatable(
+  dat_new, extensions = c('Buttons','AutoFill'), options = list(
+    colReorder = TRUE,autoFill = TRUE,
+    buttons = c('copy', 'csv', 'excel'),lengthMenu = c(10,50,100)
+  )
+)
+
+
+```
+
+
+
+##Collection- Omics data - new data upload : 
+first attempted to get all "TYPE" : "RNA-SEQ EXPRESSION" filtered to only newly updated "SAMPLE_NAMES"
+Beacuse it's too large will only  search 1 sample : outcome "TYPE" seeem to have 0 status for one the newly-updated samples
+
+Next : get 1   newly uploaded samples and all it's captured  omics - variables
+
+
+```{r CheckCollectionOmicsUpload, eval=F }
+#Mongolite
+
+omics<-mongolite::mongo("omics_data_dev", db="VIP",url="mongodb://lj-compbio-dev103:27018")
+
+omics$count() 
+
+#see how data looks like
+omics$iterate()$one()
+
+#How many distinct "PROJECT_NAME"
+length(omics$distinct("PROJECT_NAME"))
+
+#SMC
+omics$count('{"PROJECT_NAME" : "SAMSUNG", "SAMPLE_NAME" : "OB_15_0074_1"}') 
+
+# Read all the data back into R
+#db.getCollection("clinical_data_dev").find({"PROJECT_NAME" : "SAMSUNG"})
+dat<-as.data.frame(omics$find('{"PROJECT_NAME" : "SAMSUNG", "TYPE" : "RNA-SEQ","VALUE":{"$gt" : 10000}}'))
+dat_filt<-as.data.frame(dat[as.numeric(dat$VALUE) > 100,])
+
+```
+###Omics_data_dev Queried Sample-OB_15_0074_1 "RNASeq"  Gene Expresssion Values>10000  
+
+```{r expressionRNAseq, eval=F}
+datatable(
+ dat_filt, extensions = c('Buttons','AutoFill'), options = list(
+    colReorder = TRUE,autoFill = TRUE,
+    buttons = c('copy', 'csv', 'excel', 'pdf'),lengthMenu = c(10, 50, 100)
+  )
+)
+
+
+```
+
+#7/20/2018 Notes on restoring a collection - Discussions between Julio and I
+
+*dump location :*  /LJ/CompBio/share/data/lala/mongodb/
+
+
+###Restore VIP- per Collection      
+
+```{bash, eval=FALSE}
+#previously backed up in:
+mongodump --host lj-compbio-dev103:27018 --out /LJ/CompBio/share/data/lala/mongodb/
+
+#mongorestore --db mydbname --collection mycollection dump/mydbname/mycollection.bson
+
+mongorestore --host lj-compbio-dev103:27018 --db VIP --collection clinical_data_dev /LJ/CompBio/share/data/lala/mongodb/VIP/clinical_data_dev.bsonb -- -umParallelCollections=1 numthreads=1 --numInsertionWorkersPerCollection=1
+
+
+
+```
+  
+_1st attempt of  "collection clinical_data_dev restoration"-recurring error prompt_  
+*E11000 duplicate key error collection: VIP.clinical_data_dev index: _id_ dup key: { : ObjectId('57083709e91234705389b337') }
+- E11000 duplicate key error collection: VIP.clinical_data_dev index: _id_ dup key: { : ObjectId('57083709e91234705389be8b') }*
+
+[Julio]: feedback communication Notes  
+Did you drop the collection first before the restore? You need to first drop the clinical_data_dev collection.
+As clinical_data_dev is the one that is being used by the webserver I would first try to restore clinical_data. If the restore is successful then you can drop clinical_data_dev and rename the restored clinical_data to clinical_data_dev.
+
+I think that will be the method to get the less amount of downtime.
+
+To drop a collection in T3 studio just right click on the collection name and select the drop option.
+
+Let me know if that solves the issue.
+
+[Julio]:  Also take note  that you are restoring without indexes so I would just write down the list of indexes in the collection just to make sure that they can be regenerated later  
+
+if you want to restore a single collection then you have to specifiy the dump file of the collection. The dump file of the collection is found in the 'dump/dbname/' folder. So assuming your dump folder is in your current working directory, the command would go something like -
+
+*Creation of indexes*
+[Julio]The creation of the indexes should be done with code like the one below:
+You have to run one command per index. If you check the existing indexes in the tables just take note of the order of the different elements (they correspond to the "column" names).
+The value of 1 is to define if the sorting of the index value is ascending or descending.
+
+Also notice that while for the clinical data the indexes are relatively fast to generate, they take a few hours for the omic_data so I would recommend doing that update in the afternoon and let the indexes run over night.
+
+db.clinical_data.createIndex(
+   { PROJECT_NAME: 1, CANCER_TYPE: 1, SAMPLE_NAME: 1 })
+
+Please let me know if if encounter any other problems and if you successfully restored the tables as I need to apply the patch after wards to fix the issue with the duplicate cancer types that George created.   
+
+#7/23/2018 - WEEK 
+
+#1.TO DO:  
+###Power2learn-past-due  
+###prior to restoration - drop a collection    
+###write down the list of indexes in the collection- explains why?  
+https://stackoverflow.com/questions/36854566/why-mongodump-does-not-backup-indexes  https://stackoverflow.com/questions/27933169/create-mongo-backup-restore-without-indexes  
+###re-attempt per collection restoration  
+###intro-to git/github  
+###update vip upload files  
+###Achilles -CCLE Rdata object
+
+#Drop Clinical_data collection && invoke th restoration : clinical_data : done on studio 3T (right click)
+Process to minutes
+**As clinical_data_dev is the one that is being used by the webserver I would first try to restore clinical_data. If the restore is successful then you can drop clinical_data_dev and rename the restored clinical_data to clinical_data_dev.**
+
+```{bash, eval=F}
+mongorestore --host lj-compbio-dev103:27018 --db VIP --collection clinical_data /LJ/CompBio/share/data/lala/mongodb/VIP/clinical_data_dev.bson # --numParallelCollections=1 numthreads=1 --numInsertionWorkersPerCollection=1
+
+```
+  
+#Drop collection && invoke omics_data restoration : omics_data (421GB)  
+done on studio 3T (right click) started  12:44PM till 07/26/2018 @ 04:43AM - restoring indexes took 2 days to complete
+**As omics_data_dev is the one that is being used by the webserver I would first try to restore omics_data. If the restore is successful then you can drop clinical_data_dev and rename the restored clinical_data to clinical_data_dev.**
+```{bash, eval=F}
+mongorestore --host lj-compbio-dev103:27018 --db VIP --collection omics_data /LJ/CompBio/share/data/lala/mongodb/VIP/omics_data_dev.bson  # --numParallelCollections=1 numthreads=1 --numInsertionWorkersPerCollection=1
+
+
+```
+
+
+#Update "PROJECT_NAME" annotated data  for upload to mongodb
+### Also restore backed up config_files
+```{r updatefinalupload, eval=F}
+
+tab_files<-list.files("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData", pattern=".tab$", full.names = T)
+tab_files<-tab_files[-c(1:2)]
+for(i in seq_along(tab_files)){
+tab<-read.table(tab_files[i],header=T,sep="\t",stringsAsFactors = F)
+tab$PROJECT_NAME<-sub("SAMSUNG", "SMC_NAC",tab$PROJECT_NAME)
+#if(tab$CATEGORY=="clinical"){tab$CATEGORY<-sub("clinical","Clinical")}
+filename<-paste("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData_latest/",basename(tab_files[i]),sep="")
+write.table(tab,file=filename,na="", quote=F,sep="\t")
+
+}
+
+#To restore config files
+
+#edit configFiles
+configs<-list.files("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/",full.names = T)
+
+#omics
+omics<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles//vip_smc_final_unique_omics.RDS")
+omics$PROJECT_NAME<-sub("SAMSUNG","SMC_NAC",omics$PROJECT_NAME)
+saveRDS(omics,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData_latest/configFiles/vip_smc_final_unique_omics.RDS")
+write.table(omics,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData_latest/configFiles/vip_smc_final_unique_omics.tab",row.names = F,na="",col.names=T, quote=F)
+
+#clinical_data
+new_clinical_data<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/vip_smc_final_clinical_types.RDS")
+saveRDS(new_clinical_data,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData_latest/configFiles/vip_smc_final_clinical_types.RDS")
+write.table(new_clinical_data,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData_latest/configFiles/vip_smc_final_clinical_types.tab",row.names = F,na="",col.names=T, quote=F)
+
+#samples
+samples<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/vip_smc_final_samples.RDS")
+
+samples$PROJECT_NAME<-sub("SAMSUNG","SMC_NAC",samples$PROJECT_NAME)
+
+saveRDS(samples,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData_latest/configFiles/vip_smc_final_samples.RDS")
+write.table(samples,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData_latest/configFiles/vip_smc_final_samples.tab",row.names = F,na="",col.names=T, quote=F)
+```
+
+# Best Practice -Exploratory : To start QC  of final  annotated tables to upload to MongoDB 
+###ReGenerate,(and format accordingly) corresponding unique variables
+#Achilles-Rdata Object -In progress -Discussion (07/30/2018 )
+### refer to desiganted R-project
+

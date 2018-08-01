@@ -1,0 +1,481 @@
+---
+title: "MongoDb_upload"
+author: "Lala M Motlhabi"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    fig_height: 8
+    fig_width: 8
+    toc: yes
+    toc_depth: 4
+    toc_float: true
+    keep_md: no
+    self_contained: no
+    code_folding: hide
+    output:
+      pandoc_args: [
+      "+RTS", "-K64m",
+      "-RTS"
+      ]
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( cache=TRUE )
+knitr::opts_chunk$set( echo=TRUE )
+knitr::opts_chunk$set( message=FALSE )
+knitr::opts_chunk$set(warning=FALSE )
+knitr::opts_chunk$set(autodep=TRUE)
+options(figcap.prefix = "Figure", figcap.sep = ":", figcap.prefix.highlight = "**")
+options(tabcap.prefix = "Table", tabcap.sep = ":", tabcap.prefix.highlight = "**")
+```
+```{r config}
+install.packages("ssh.utils")
+library(ssh.utils)
+library(dplyr)
+library(DT)
+library(reshape2)
+library(mongolite)
+library(stringr)
+library(tidyverse)
+library(tidyr)
+library(data.table)
+library(getopt)
+library(reshape2)
+
+```
+## MongoDB Management:
+Server location: lj-compbio-dev103
+Server port: 27018
+
+Storage engine data location: /var/lib/mongowt/
+Server configuration  file:  /etc/mongod.conf
+Log files: /var/log/mongodb/mongod_wt.log
+
+Notice: The log file only keeps track of the status of the server and the connections. If you want to look at the queries being run then you need to log into mongo and in the VIP collection and run the command: db.system.profile.find().pretty()
+
+##How to restart the mongodb:
+```{bash restartmongdb,eval=FALSE}
+sudo mongod --config /etc/mongod.conf 
+```
+
+#In case the database refuses to start, notice that files need to be owned by mongod:
+
+```{bash startAssudo,eval=FALSE}
+sudo chown -R mongod:mongod /var/log/mongodb/mongod.log
+sudo chown  -R mongod:mongod /var/lib/mongowt
+
+```
+
+
+#When to restart the server: mongodb only needs to be restarted in case the server goes down or an update is necessary. 
+
+## Load data to mongodb:
+```{bash loadData}
+mongoimport --port 27018 --db NAME_OF_DATABASE --collection TABLE_NAME  --type tsv --ignoreBlanks --headerline --file  PATH_TO_TAB_SEPARATED_FILE
+
+```
+
+
+## Backup database:
+Backup schedule:
+I recommend making a full database backup every 3 months or every time a big dataset has been loaded. In case a big dataset is to be loaded I recommend doing the backup before the load takes place(if new smaller datasets have been loaded since the last backup) as it will be easier/faster to restore the backup if there is an issue with the load than to try to clean up the database if the load causes some issues.
+
+
+```{bash backupdb}
+mongodump --host lj-compbio-dev103:27018 --out PATH_TO_FOLDER_TO_STORE_BACKUP
+```
+
+
+##  Restore from Backup:
+
+```{bash restorebackup}
+mongorestore  PATH_TO_BSON_FILE_TO_RESTORE -d DATABASE  --noIndexRestore -h 127.0.0.1:27018 -numParallelCollections=1 numThreads=1 --numInsertionWorkersPerCollection=1
+
+```
+
+
+##  Recommended tool for managing mongo and run queries:
+https://studio3t.com/
+
+3T studio requires that you have mongo installed in your local computer. For instructions on how to install mongo see:
+https://docs.mongodb.com/manual/administration/install-community/
+
+##	Example queries:
+```{bash}
+#	Get data:
+db.omics_data_dev.find({PROJECT_NAME: "CCLE", TYPE:"Avana gene CERES 17Q2"})
+#	Update data:
+db.omics_data_dev.update({TYPE : "avana gene ceres 17Q2"},{$set: {TYPE:"Avana gene CERES 17Q2 "}}, {multi: true})
+#Delete data:
+db.omics_data_dev.remove({PROJECT_NAME: "CCLE", TYPE:"Avana gene CERES 17Q3 dep"})
+
+
+```
+
+
+# 3.	Shiny Server Management:
+Server location: lj-compbio-dev103
+Location of application folders: /opt/shiny-server/samples/sample-apps/
+Location of R libraries used by Shiny: /local/apps/R-3.2.2/bin/R
+Location of server log files: /var/log/shiny-server.log 
+Location of application log files: /var/log/shiny-server/
+
+## Restart the shiny server: 
+sudo restart shiny-server
+
+Notice: The shiny-server needs to be restarted every time a change has been made to global. Other changes will show just by reloading the webpage.
+When the system becomes unresponsive it is also recommended to restart the server if the website does not respond after a few minutes.
+
+To access the deployed application use:
+http://laj-shiny/sample-apps/YourShineApp/
+
+## 3.1.	VIP
+Two apps are available for VIP:
+Production: http://laj-shiny/vip/
+Development: http://laj-shiny/sample-apps/vip-mongo
+Both apps access the same mongodb database (VIP) and the same collections (term to describe tables in mongodb).
+There are two collections currently being used to store data for VIP.
+For “Sample annotations”:  clinical_data_dev
+For “omics” and other types of data: omics_data_dev
+##VIP also requires a set of configuration files that need to be updated when new data is loaded in the database and auxiliary files that provide information about gene lists used for filtering and also documentation.
+##The configuration files can be updated by running the script: 
+
+#Config Files
+##Configuration files
+-	vip_unique_variables.txt: PROJECT_SELECTION, TYPE, DATA_TYPE, VARIABLE, CATEGORY
+-	vip_clinical_types.txt: TYPE, DATA_TYPE, CATEGORY, VALUE_TYPE
+-	vip_omics_types.txt: TYPE, DATA_TYPE, CATEGORY, VALUE_TYPE
+-	vip_samples.txt: PROJECT_NAME, SAMPLE_NAME, SAMPLE_TYPE, CANCER_TYPE
+
+-Parsing the generated  SMC format as stated above
+
+```{r getConfigsFormat}
+Path_configs<-"/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/"
+ #clinical_types
+clinical<-as.data.frame(fread(paste(Path_configs,"vip_smc_clinical_types.tab",sep=""), header=F));
+names(clinical)<-c("TYPE","DATA_TYPE","CATEGORY")
+clinical$VALUE_TYPE<-clinical$DATA_TYPE
+clinical$VALUE_TYPE<-sub("continuous","linear",clinical$VALUE_TYPE )
+saveRDS(clinical,file=paste(Path_configs,"vip_smc_final_clinical_types.RDS", sep=""))
+write.table(clinical,file=paste(Path_configs,"vip_smc_final_clinical_types.tab",sep=""),sep="\t",row.names = F,na="", col.names=F, quote=F)
+
+#omics_types # still to curate  VALUE_TYPE to  e.g. "linear or log"
+ex.omics_types<-fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_omics_types.txt', header=TRUE)
+Path_configs<-"/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/"
+omics <-fread(paste(Path_configs,"vip_smc_unique_omics.tab",sep=""), header=TRUE, stringsAsFactors = F);
+Split<-colsplit(omics$.,"\\.",c("PROJECT_NAME","CANCER_TYPE"))
+omics<-cbind(Split, omics)
+omics<-omics[,-c(3)]
+colnames(omics)<-c("PROJECT_NAME","CANCER_TYPE","TYPE", "DATA_TYPE","VARIABLE","CATEGORY")
+omics<-omics[,-c(1:2)]
+omics<-omics[-1,]
+saveRDS(omics,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/vip_smc_final_unique_omics.RDS")
+write.table(omics,file="/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/vip_smc_final_unique_omics.tab",row.names = F,na="",col.names=F, quote=F)
+
+
+
+##Unique_variables : clinical 
+ex.unique_var  <-fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_unique_variables.txt', header=TRUE);
+head(ex.unique_var)
+unique_clinical_var  <-fread(paste(Path_configs,"vip_smc_unique_clinical.tab",sep=""), header=TRUE, stringsAsFactors = F);
+names(unique_clinical_var)[1]<-"PROJECT_SELECTION"
+saveRDS(unique_clinical_var,file=paste(Path_configs,"vip_smc_final_unique_clinical.RDS",sep=""))
+write.table(unique_clinical_var,file=paste(Path_configs,"vip_smc_final_unique_clinical.tab",sep=""),sep="\t",row.names = F,na="", col.names=F, quote=F)
+
+##samples #284 samples 
+ex.samples <- fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_samples.txt', header=TRUE)
+
+samples<-fread(paste(Path_configs,"vip_smc_samples.tab",sep=""), header=TRUE);
+saveRDS(samples,file=paste(Path_configs,"vip_smc_final_samples.RDS",sep=""))
+write.table(samples,file=paste(Path_configs,"vip_smc_final_samples.tab",sep=""),sep="\t",row.names = F,na="", col.names=F, quote=F)
+```
+
+
+#NOTICE: Before loading any data in VIP or before copying the configuration files to the server run the dos2unix command as sometimes the files introduce some hidden characters that cause unexpected issues.
+
+#Update_config_files_Rscript - breakdown
+-load Original config_files & Create a back up of the existing current cofig files
+-created a "deprecated_07122018" temp backup folder
+```{r LoadBackupOrigConfigFilesR}
+#/LJ/CompBio/data/omics/VIP/scripts/update_config_files.R
+
+##########
+#
+# Examples on how to update the config files using R
+#
+##########
+
+### Load the original config files
+print("Opening current config files")
+clinical_types  <-fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_07122018/vip_clinical_types.txt', header=TRUE);
+omics_types  <-fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_omics_types.txt', header=TRUE);
+unique_var  <-fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_unique_variables.txt', header=TRUE);
+samples <- fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_07122018/vip_samples.txt', header=TRUE)
+
+### Copy original files to the deprecated folder just for backup
+#BACK UP ORIGINAL config files
+# copy the files to the new folder
+print("Creating backup of current config files")
+file.copy('/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_clinical_types.txt', '/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_07122018/vip_clinical_types.txt', overwrite = TRUE) 
+file.copy('/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_omics_types.txt', '/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_07122018/vip_omics_types.txt', overwrite = TRUE)
+file.copy('/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_unique_variables.txt', '/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_07122018/vip_unique_variables.txt', overwrite = TRUE)
+file.copy('/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_samples.txt', '/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_07122018/vip_samples.txt', overwrite = TRUE)
+
+```
+
+
+##PROCESS omics data
+
+```{r getOmicsConfig}
+omics<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/vip_smc_final_unique_omics.RDS")
+omics$VALUE_TYPE<-omics$DATA_TYPE
+omics$VALUE_TYPE<-sub("continuous","linear",omics$VALUE_TYPE)
+new_omics_data <-as.data.frame(omics);
+
+if(!is.null(opt$omics)){
+  print("Processing omics data file")
+  new_omics_data = fread(opt$omics, header=TRUE);
+  #print(head(new_omics_data))
+  # print("Updating omics types")
+  #Add values to omics_types.txt from a file that contains the data to load in the database
+  # This file contains the list of unique variables that are available for selection from the omics_data collection in mongo
+  #BLANK SPACES???
+  new_omics_types = new_omics_data %>% dplyr::select(TYPE, DATA_TYPE, CATEGORY, VALUE_TYPE) %>% 
+    dplyr::distinct(TYPE, DATA_TYPE, CATEGORY, VALUE_TYPE)
+
+  # Join the new unique variables to the existing ones and do a distinct to make sure that there are no duplicates.
+  omics_types = dplyr::bind_rows(omics_types,new_omics_types) %>% dplyr::distinct() %>% dplyr::arrange(TYPE)
+  omics_types<-omics_types[-c(1:2),]
+  print("Updating unique omics variables")
+  #Add values to the unique_variables file from a file that contains the data to load in the database.
+  # This file is used to populate the variable selection menus on the left side of the browser
+  # We need to merge the PROJECT NAME and CANCER TYPE into a single column as it is how the tree library in R is providing the data.
+  # Also do a distinct to remove duplicates.
+  
+
+  new_unique_omics_variables = new_omics_data %>% dplyr::transmute(PROJECT_SELECTION = paste0(PROJECT_NAME,".",CANCER_TYPE),
+                                                                   TYPE = TYPE,
+                                                                   DATA_TYPE,
+                                                                   VARIABLE,
+                                                                   CATEGORY) %>%
+    dplyr::distinct(PROJECT_SELECTION, TYPE, DATA_TYPE, VARIABLE, CATEGORY)
+  
+  # Join the new variables with the existing ones and remove duplicates in case the variable already exist in the config file
+  unique_var = dplyr::bind_rows(unique_var,new_unique_omics_variables) %>% dplyr::distinct() %>% dplyr::arrange(PROJECT_SELECTION, CATEGORY, TYPE, VARIABLE)
+  
+  ###Didn't capture 
+  print("Updating unique samples")
+  # Make new samples (if any) available from the config file
+  
+  new_data_samples<-fread(paste(Path_configs,"vip_smc_samples.tab",sep=""), header=TRUE);
+  new_samples =  new_data_samples %>% dplyr::select(PROJECT_NAME, SAMPLE_NAME, SAMPLE_TYPE, CANCER_TYPE) %>% 
+    dplyr::distinct(PROJECT_NAME, SAMPLE_NAME, SAMPLE_TYPE, CANCER_TYPE)
+  
+  # Join with previous existing samples and distinct to make sure there are no duplicates.
+  
+  samples = dplyr::bind_rows(samples, new_samples) %>% dplyr::distinct() %>% dplyr::arrange(PROJECT_NAME, CANCER_TYPE, SAMPLE_NAME, SAMPLE_TYPE)
+  
+}
+```
+
+
+#Clinical_type confused ??
+```{r ClinicalDataConfig}
+
+if(!is.null(opt$clinical)){
+  print("Processing clinical data file")
+  
+  new_clinical_data<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/vip_smc_final_clinical_types.RDS")
+  #new_clinical_data = fread(opt$clinical, header=TRUE);
+  new_clinical_data$CATEGORY <- "Sample annotations"
+  print("Updating clinical data types")
+  #Add values to omics_types.txt from a file that contains the data to load in the database
+  new_clinical_types = new_clinical_data  %>% dplyr::distinct(TYPE, DATA_TYPE, CATEGORY, VALUE_TYPE)
+   #omitted above step
+  new_clinical_types<-as.data.frame(new_clinical_types)
+  clinical_types = dplyr::bind_rows(clinical_types,new_clinical_types) %>% dplyr::distinct() %>% dplyr::arrange(TYPE)
+  
+  print("UPdating unique clinical variables")
+  #Add values to the unique_variables file from a file that contains the data to load in the database
+  new_clinical_data<-fread("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/vip_smc_final_unique_clinical.tab",header=T)
+  names(new_clinical_data)<-c("PROJECT_SELECTION","TYPE","DATA_TYPE","VARIABLE","CATEGORY")
+  new_clinical_data$CATEGORY<-"Sample annotations"
+ 
+   new_unique_clinical_variables = new_clinical_data %>% dplyr::distinct(PROJECT_SELECTION, TYPE, DATA_TYPE, VARIABLE, CATEGORY)
+  
+  unique_var = dplyr::bind_rows(unique_var,new_unique_clinical_variables) %>% dplyr::distinct() %>% dplyr::arrange(PROJECT_SELECTION, CATEGORY, TYPE, VARIABLE)
+  
+  
+  print("Updating unique samples")
+  
+  # Make new samples (if any) available from the config file
+  new_samples = new_clinical_data %>% dplyr::select(PROJECT_NAME, SAMPLE_NAME, SAMPLE_TYPE, CANCER_TYPE) %>% 
+    dplyr::distinct(PROJECT_NAME, SAMPLE_NAME, SAMPLE_TYPE, CANCER_TYPE)
+  
+  # Join with previous existing samples and distinct to make sure there are no duplicates.
+  samples = dplyr::bind_rows(samples, new_samples) %>% dplyr::distinct() %>% dplyr::arrange(PROJECT_NAME, CANCER_TYPE, SAMPLE_NAME, SAMPLE_TYPE)
+  
+  
+}
+
+```
+
+#Saving updated config files ACCESS ISSUE dumped in newly created "tmp_staging*" the copied files 
+```{r saveUpdatedConfigFiles}
+
+print("Saving updated config files")
+write.table(clinical_types, file= "/LJ/CompBio/share/data/omics/VIP/portal_data/data/tmp_config_staging/vip_clinical_types.txt", quote = FALSE, sep = "\t", row.names = FALSE)
+write.table(omics_types, file= "/LJ/CompBio/share/data/omics/VIP/portal_data/data/tmp_config_staging/vip_omics_types.txt", quote = FALSE, sep = "\t", row.names = FALSE)
+write.table(unique_var, file= "/LJ/CompBio/share/data/omics/VIP/portal_data/data/tmp_config_staging/vip_unique_variables.txt", quote = FALSE, sep = "\t", row.names = FALSE)
+write.table(samples, file= '/LJ/CompBio/share/data/omics/VIP/portal_data/data/tmp_config_staging/vip_samples.txt', quote = FALSE, sep = "\t", row.names = FALSE)
+
+```
+
+
+
+
+##Copy the new config files to the shiny server
+example -lines of scripts to copy data
+```{r exampleUpdateServer}
+
+# cp.remote(remote.src = "", path.src = "/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_clinical_types.txt", 
+#           remote.dest =paste0(opt$user,"@lj-compbio-dev103"), path.dest  = "/ ", 
+#           verbose = FALSE,
+#           via.local = FALSE, 
+#           local.temp.dir = tempdir())
+# 
+# cp.remote(remote.src = "", path.src = "/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_omics_types.txt", 
+#           remote.dest =paste0(opt$user,"@lj-compbio-dev103"), path.dest  = "/opt/shiny-server/samples/sample-apps/vip-dev/data/vip_omics_types.txt", 
+#           verbose = FALSE,
+#           via.local = FALSE, 
+#           local.temp.dir = tempdir())
+# 
+# cp.remote(remote.src = "", path.src = "/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_unique_variables.txt", 
+#           remote.dest =paste0(opt$user,"@lj-compbio-dev103"), path.dest  = "/opt/shiny-server/samples/sample-apps/vip-dev/data/vip_unique_variables.txt", 
+#           verbose = FALSE,
+#           via.local = FALSE, 
+#           local.temp.dir = tempdir())
+# 
+# cp.remote(remote.src = "", path.src = "/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_samples.txt", 
+#           remote.dest =paste0(opt$user,"@lj-compbio-dev103"), path.dest  = "/opt/shiny-server/samples/sample-apps/vip-dev/data/vip_samples.txt", 
+#           verbose = FALSE,
+#           via.local = FALSE, 
+#           local.temp.dir = tempdir())
+# 
+
+
+
+```
+#Copy Config files to server
+vip_dev server location : /opt/shiny-server/samples/sample-apps/vip-dev/data/vip_omics_types.txt
+backup_location :/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/current_configFiles_backUP
+
+previously loactions with the most current staged and updated config files:
+/LJ/CompBio/share/data/omics/VIP/portal_data/data/
+
+```{bash copyConfigFilesToserver}
+ #first get the old files from the server to back them up
+ #ssh into shiny app_server
+ farm103
+ 
+ #cp over updated clinical_type #new_size15839 
+ cp /LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_clinical_types.txt /opt/shiny-server/samples/sample-apps/vip-dev/data/vip_clinical_types.txt
+
+#cp over unique_vars #1608855285
+cp  /LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_unique_variables.txt /opt/shiny-server/samples/sample-apps/vip-dev/data/vip_unique_variables.txt
+
+#cp over samples_types
+cp /LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_samples.txt /opt/shiny-server/samples/sample-apps/vip-dev/data/vip_samples.txt
+
+
+
+```
+
+
+
+###################################
+# LOAD DATA FILES TO MONGODB  ->> NEED TO SSH into lj-compbio-dev103.pfizer.com
+###################################
+
+## Backup database:
+Backup schedule:
+I recommend making a full database backup every 3 months or every time a big dataset has been loaded. In case a big dataset is to be loaded I recommend doing the backup before the load takes place(if new smaller datasets have been loaded since the last backup) as it will be easier/faster to restore the backup if there is an issue with the load than to try to clean up the database if the load causes some issues.
+
+```{bash}
+mongodump --host lj-compbio-dev103:27018 --out /LJ/CompBio/share/data/lala/mongodb/
+
+```
+
+
+
+```{bash mongoImportData}
+mongoimport --port 27018 --db VIP --collection clinical_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_clinical_info.txt 
+mongoimport --port 27018 --db VIP --collection clinical_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_sample_purity.txt #no purity info
+mongoimport --port 27018 --db VIP --collection clinical_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_estimate_info.txt  #did not parse
+
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cnv_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cn_amplified_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cn_deleted_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_mutations_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_expression_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_gsva_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_ihc_pfizer.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_ihc_mosaic.txt
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_nmf.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cytscore.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cin_final.txt
+mongoimport --port 27018 --db VIP --collection omics_data --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_clonality_final.txt
+
+mongoimport --port 27018 --db VIP --collection clinical_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_additional_clinical.txt
+mongoimport --port 27018 --db VIP --collection clinical_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_predicted_subtype_clinical.txt
+
+
+mongoimport --port 27018 --db VIP --collection clinical_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cibersort_clinical.txt
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cibersort.txt
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_cibersort_fraction.txt
+mongoimport --port 27018 --db VIP --collection clinical_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_YBC/vip/vip_smc_mutation_burden.txt
+
+
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/vip_ccle_breast_nmf.txt
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/vip_tcga_brca_nmf.txt
+mongoimport --port 27018 --db VIP --collection clinical_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/work/julio/work/vip/vip_updates_10272016/vip_tcga_brca_subtypes_final.txt
+
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/julio/vip/vip_samsung_brca_status_germline
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
