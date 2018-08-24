@@ -1,0 +1,339 @@
+---
+title: "SMC_NAC_dataAnnotate"
+author: "Lala M Motlhabi"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: yes
+    toc_depth: '4'
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+  html_document:
+    code_folding: hide
+    fig_height: 8
+    fig_width: 8
+    keep_md: no
+    output:
+      pandoc_args:
+      - +RTS
+      - -K64m
+      - -RTS
+    self_contained: no
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( cache=TRUE )
+knitr::opts_chunk$set( echo=TRUE )
+knitr::opts_chunk$set( message=FALSE )
+knitr::opts_chunk$set(warning=FALSE )
+knitr::opts_chunk$set(autodep=TRUE)
+options(figcap.prefix = "Figure", figcap.sep = ":", figcap.prefix.highlight = "**")
+options(tabcap.prefix = "Table", tabcap.sep = ":", tabcap.prefix.highlight = "**")
+```
+```{r config}
+install.packages("ssh.utils")
+library(ssh.utils)
+library(dplyr)
+library(DT)
+library(reshape2)
+library(mongolite)
+library(stringr)
+library(tidyverse)
+library(tidyr)
+library(data.table)
+library(getopt)
+library(reshape2)
+library(magrittr)
+
+library(stringr)
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+library(data.table)
+library(getopt)
+
+```
+
+
+
+
+##########
+#
+# Examples on how to update the config files using R
+#
+##########
+
+
+
+### Load & backUp the original config files
+```{r backUpcurrentCofigs}
+print("Opening current config files")
+clinical_types  <-fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_08122018/vip_clinical_types.txt', header=TRUE);
+omics_types  <-fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_08122018/vip_omics_types.txt', header=TRUE);
+unique_var  <-fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_08122018/vip_unique_variables.txt', header=TRUE);21539836
+samples <- fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_08122018/vip_samples.txt', header=TRUE)
+
+### Copy original files to the deprecated folder just for backup
+
+# copy the files to the new folder :/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_08122018/
+
+print("Creating backup of current config files")
+file.copy('/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_clinical_types.txt', '/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_08122018/vip_clinical_types.txt', overwrite = TRUE) 
+file.copy('/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_omics_types.txt', '/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_08122018/vip_omics_types.txt', overwrite = TRUE)
+file.copy('/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_unique_variables.txt', '/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_08122018/vip_unique_variables.txt', overwrite = TRUE)
+file.copy('/LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_samples.txt', '/LJ/CompBio/share/data/omics/VIP/portal_data/data/deprecated_08122018/vip_samples.txt', overwrite = TRUE)
+```
+
+##Omics_types
+
+```{r Omicsupdate}
+
+  print("Processing omics data file")
+  new_omics_data = readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/ConfigFiles/new_omics_type.RDS");
+  #print(head(new_omics_data))
+  # print("Updating omics types")
+  #Add values to omics_types.txt from a file that contains the data to load in the database
+  # This file contains the list of unique variables that are available for selection from the omics_data collection in mongo
+  new_omics_types = new_omics_data %>% dplyr::select(TYPE, DATA_TYPE, CATEGORY, VALUE_TYPE) %>% 
+    dplyr::distinct(TYPE, DATA_TYPE, CATEGORY, VALUE_TYPE)
+ 
+  # Join the new unique variables to the existing ones and do a distinct to make sure that there are no duplicates.
+  omics_types = dplyr::bind_rows(omics_types,new_omics_types) %>% dplyr::distinct() %>% dplyr::arrange(TYPE)
+```
+
+ ##unique omics variables 
+```{r getuniqueOmicsVars}
+  print("Updating unique omics variables")
+  #Add values to the unique_variables file from a file that contains the data to load in the database.
+  # This file is used to populate the variable selection menus on the left side of the browser
+  # We need to merge the PROJECT NAME and CANCER TYPE into a single column as it is how the tree library in R is providing the data.
+  # Also do a distinct to remove duplicates.
+
+ new_unique_omics_variables<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/ConfigFiles/new_unique_omics_variables.RDS")
+
+#new_omics_data$PROJECT_SELECTION = paste0(PROJECT_NAME,".",CANCER_TYPE,new_omics_data$PROJECT_SELECTION)
+ new_unique_omics_variables<- new_unique_omics_variables %>% dplyr::transmute(PROJECT_SELECTION = PROJECT_SELECTION,
+                                                                   TYPE = TYPE,
+                                                                   DATA_TYPE,
+                                                                   VARIABLE,
+                                                                   CATEGORY) %>%
+    dplyr::distinct(PROJECT_SELECTION, TYPE, DATA_TYPE, VARIABLE, CATEGORY)
+ 
+  # Join the new variables with the existing ones and remove duplicates in case the variable already exist in the config file
+  unique_var = dplyr::bind_rows(unique_var,new_unique_omics_variables) %>% dplyr::distinct() %>% dplyr::arrange(PROJECT_SELECTION, CATEGORY, TYPE, VARIABLE)
+```
+
+##Get Unique Samples
+```{r getUniqueSamples}
+
+  print("Updating unique samples")
+new_samples<-readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/ConfigFiles/new_samples.RDS")
+  # Make new samples (if any) available from the config file
+  new_samples  %>% dplyr::select(PROJECT_NAME, SAMPLE_NAME, SAMPLE_TYPE, CANCER_TYPE) %>% 
+    dplyr::distinct(PROJECT_NAME, SAMPLE_NAME, SAMPLE_TYPE, CANCER_TYPE)
+  new_samples %<>% mutate_if(is.factor,as.character)
+  # Join with previous existing samples and distinct to make sure there are no duplicates.
+  
+    
+  samples = dplyr::bind_rows(samples, new_samples) %>% dplyr::distinct() %>% dplyr::arrange(PROJECT_NAME, CANCER_TYPE, SAMPLE_NAME, SAMPLE_TYPE)
+  
+```
+#clinical_data
+```{r clinicalData}
+
+  print("Processing clinical data file")
+  new_clinical_data = readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/ConfigFiles/new_clinical_types.RDS")
+  
+  print("Updating clinical data types")
+  #Add values to omics_types.txt from a file that contains the data to load in the database
+  new_clinical_types = new_clinical_data  %>% dplyr::distinct(TYPE, DATA_TYPE, CATEGORY, VALUE_TYPE)
+ #ifelse("VALUE_TYPE" %in% colnames(new_omics_data), VALUE_TYPE,)
+                                                                              
+  clinical_types = dplyr::bind_rows(clinical_types,new_clinical_types) %>% dplyr::distinct() %>% dplyr::arrange(TYPE)
+  
+  print("UPdating unique clinical variables")
+  #Add values to the unique_variables file from a file that contains the data to load in the database
+  new_unique_clinical_variables = readRDS("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/ConfigFiles/new_unique_clinical_variables.RDS")
+  new_unique_clinical_variables=new_unique_clinical_variables  %>% dplyr::distinct(PROJECT_SELECTION, TYPE, DATA_TYPE, VARIABLE, CATEGORY)
+  
+  unique_var = dplyr::bind_rows(unique_var,new_unique_clinical_variables) %>% dplyr::distinct() %>% dplyr::arrange(PROJECT_SELECTION, CATEGORY, TYPE, VARIABLE)
+```
+
+#Update Current configs
+```{r}
+print("Saving updated config files")
+samples %<>% mutate_if(is.factor,as.character)
+clinical_types %<>% mutate_if(is.factor,as.character)
+omics_types %<>% mutate_if(is.factor,as.character)
+unique_var %<>% mutate_if(is.factor,as.character)
+write.table(clinical_types, file= "/LJ/CompBio/share/data/omics/VIP/portal_data/data/tmp_config_staging/vip_clinical_types.txt", quote = FALSE, sep = "\t", row.names = FALSE)
+write.table(omics_types, file= "/LJ/CompBio/share/data/omics/VIP/portal_data/data/tmp_config_staging/vip_omics_types.txt", quote = FALSE, sep = "\t", row.names = FALSE)
+write.table(unique_var, file= "/LJ/CompBio/share/data/omics/VIP/portal_data/data/tmp_config_staging/vip_unique_variables.txt", quote = FALSE, sep = "\t", row.names = FALSE)
+write.table(samples, file= '/LJ/CompBio/share/data/omics/VIP/portal_data/data/tmp_config_staging/vip_samples.txt', quote = FALSE, sep = "\t", row.names = FALSE)
+
+```
+
+#Copy Config files to server
+vip_dev server location : /opt/shiny-server/samples/sample-apps/vip-dev/data/vip_omics_types.txt
+backup_location :/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/final_uploadData/configFiles/current_configFiles_backUP
+
+previously loactions with the most current staged and updated config files:
+/LJ/CompBio/share/data/omics/VIP/portal_data/data/
+
+```{bash copyConfigFilesToserver}
+ #first get the old files from the server to back them up
+ #ssh into shiny app_server
+ farm103
+ 
+ #cp over omics_type
+cp /LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_omics_types.txt /opt/shiny-server/samples/sample-apps/vip-dev/data/vip_omics_types.txt
+
+ #cp over updated clinical_type #new_size 15019 
+ cp /LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_clinical_types.txt /opt/shiny-server/samples/sample-apps/vip-dev/data/vip_clinical_types.txt
+
+#cp over unique_vars 
+cp  /LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_unique_variables.txt /opt/shiny-server/samples/sample-apps/vip-dev/data/vip_unique_variables.txt
+
+#cp over samples_types
+cp /LJ/CompBio/share/data/omics/VIP/portal_data/data/vip_samples.txt /opt/shiny-server/samples/sample-apps/vip-dev/data/vip_samples.txt
+
+
+
+```
+
+#Add Date_Uploaded Field
+```{r}
+vipfiles<-list.files("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData",pattern=".RDS$", full.names=T)
+
+for(i in seq_along(vipfiles)){
+  anno<-readRDS(vipfiles[i])
+  anno$DATE_UPLOADED<-Sys.Date()
+  saveRDS(anno,file=vipfiles[i])
+  viptab<-sub("RDS$","tab",vipfiles[i])
+  write.table(anno,file=viptab,sep="\t",row.names=F,na="",quote=F)
+  rm(anno)
+}
+
+
+
+```
+1.started @4:30PM took less than an hour 
+2.started @8:36pm
+```{bash}
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_cibersort_fraction.tab
+ mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_cibersort.tab         
+ mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_cin.tab               
+ mongoimport --port 27018 --db VIP --collection clinical_data_dev  --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_clinical_info.tab     
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_cn_amplified.tab      
+ mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_cn_deleted.tab        
+ mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_cnv.tab               
+ mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_cytscore.tab          
+ mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_estimate_info.tab     
+ mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_expression.tab        
+ mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_gsva.tab              
+ mongoimport --port 27018 --db VIP --collection clinical_data_dev  --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_mutation_burden.tab   
+mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_mutation_signature.tab
+ mongoimport --port 27018 --db VIP --collection omics_data_dev --type tsv --ignoreBlanks --headerline --file /LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData/vip_smc_mutations.tab         
+     
+```
+
+#Validate Upload
+```{r mongolite, eval=F}
+
+m<-mongolite::mongo("omics_data_dev", db="VIP",url="mongodb://lj-compbio-dev103:27018")
+m$count() #1686067698
+
+#see how data looks like
+m$iterate()$one()
+
+#How many distinct "PROJECT_NAME"
+length(m$distinct("PROJECT_NAME"))
+
+#SMC
+m$count('{"PROJECT_NAME" : "SMC_NAC" }') #11332069
+test<-m$find('{"PROJECT_NAME" : "SMC_NAC","TYPE":"ESTIMATE"}')#,"CATEGORY":"Summary statistic"}')
+m$update('{"PROJECT_NAME" : "SMC_NAC","TYPE":"ESITIMATE","CATEGORY":"Summary statistic"}', '{"$set":{"CATEGORY":"Summary statistics"}}')
+```
+
+#3T studio
+```{bash}
+ db.getCollection("omics_data_dev").find({"PROJECT_NAME":"SMC_NAC","TYPE":"CYTOLYTIC ACTIVITY"})
+db.omics_data_fix.update(
+   { "PROJECT_NAME":"SMC_NAC","TYPE":"CIN SCORE" },
+   { $set: { "CATEGORY": "Summary statistics" } }
+)
+
+db.omics_data_fix.updateMany(
+   { "PROJECT_NAME":"SMC_NAC","TYPE":"CYTOLYTIC ACTIVITY" },
+   { $set: { "CATEGORY": "Summary statistics" } }
+)
+
+db.omics_data_dev.updateMany(
+   { "PROJECT_NAME":"SMC_NAC","TYPE":"ESTIMATE" },
+   { $set: { "CATEGORY": "Summary statistics" } }
+)
+
+db.omics_data_dev.updateMany(
+   { "PROJECT_NAME":"SMC_NAC","TYPE":"CIN SCORE" },
+   { $set: { "CATEGORY": "Summary statistics" } }
+   
+   
+###Remove- Delete COPY NUMBER
+db.getCollection("omics_data_dev").find({"PROJECT_NAME":"SMC_NAC","TYPE":"COPY NUMBER"})
+
+
+db.omics_data_dev.deleteMany( { "PROJECT_NAME":"SMC_NAC","TYPE":"COPY NUMBER" } );
+   
+   
+```
+
+
+##Edit "Summary statistic" in config files
+
+```{r}
+clinical_types  <-fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/tmp_config_staging/vip_clinical_types.txt', header=TRUE);
+omics_types  <-fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/tmp_config_staging/vip_omics_types.txt', header=TRUE);
+unique_var  <-fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/tmp_config_staging/vip_unique_variables.txt', header=TRUE);
+samples <- fread('/LJ/CompBio/share/data/omics/VIP/portal_data/data/tmp_config_staging/vip_samples.txt', header=TRUE)
+
+
+head(clinical_types)
+
+omics_types$CATEGORY<-gsub("Summary statistic$","Summary statistics",omics_types$CATEGORY)
+unique(unique_var$CATEGORY)
+unique_var$CATEGORY<-gsub("Summary statistic$","Summary statistics",unique_var$CATEGORY)
+
+```
+
+
+#Update reccommended changes by George
+##Summary statistcs As sub-Catergory of Sa
+
+```{r fixSummaryStats}
+vipfiles<-list.files("/LJ/CompBio/share/data/omics/SMC_neoadj/vip_data_upload/SMC_neoadj_2018_6_21/vip_curatedData",pattern=".RDS$", full.names=T)
+sumstats<-vipfiles[c(5,9:10,4)]
+
+clin<-readRDS(sumstats[1])
+#  PROJECT_NAME  SAMPLE_NAME SAMPLE_TYPE CANCER_TYPE CLINICAL_TYPE CLINICAL_VAR DATA_TYPE  VALUE IS_COMMON           CATEGORY DATE_UPLOADED
+#1      SMC_NAC OB_15_0053_1       Tumor      BREAST      Clinical       Gender  discrete FEMALE         Y Sample annotations    2018-08-14
+#2      SMC_NAC OB_15_0058_1       Tumor      BREAST      Clinical       Gender  discrete FEMALE         Y Sample annotations    2018-08-14
+#3      SMC_NAC OB_15_0058_3       Tumor      BREAST      Clinical       Gender  discrete FEMALE         Y Sample annotations    2018-08-14
+#4      SMC_NAC OB_15_0066_3       Tumor      BREAST      Clinical       Gender  discrete FEMALE         Y Sample annotations    2018-08-14
+#5      SMC_NAC OB_15_0067_1       Tumor      BREAST      Clinical       Gender  discrete FEMALE         Y Sample annotations    2018-08-14
+
+tab<-readRDS(sumstats[2])
+
+names(tab)
+```
+
+:%s/summary statistics/Summary statistics/g
+
+db.omics_data_dev.updateMany(
+   { "PROJECT_NAME":"SMC_NAC","TYPE":"ESTIMATE" },
+   { $set: { "CATEGORY": "Sample annotations","TYPE": "Sample annotations" } }
+   
+

@@ -53,10 +53,12 @@ library(reshape2)
 #Mongolite
 ex.http://datascience-enthusiast.com/R/MongoDB_R_Python.html
 ```{r mongolite, eval=F}
-
+##omics_data_dev collection
 m<-mongolite::mongo("omics_data_dev", db="VIP",url="mongodb://lj-compbio-dev103:27018")
 m$count() #1686067698
 
+#omics_data_dev_prev
+m_prev<-mongolite 1701499165
 #see how data looks like
 m$iterate()$one()
 
@@ -66,6 +68,14 @@ length(m$distinct("PROJECT_NAME"))
 #SMC
 m$count('{"PROJECT_NAME" : "SAMSUNG" }') #11332069
 
+##clinical_data_dev collection
+c<-mongolite::mongo("clinical_data_dev", db="VIP",url="mongodb://lj-compbio-dev103:27018")
+
+c$count() #917014
+
+c_prev<-mongolite::mongo("clinical_data_prev", db="VIP",url="mongodb://lj-compbio-dev103:27018")
+
+c_prev$count() #937138
 
 ```
 
